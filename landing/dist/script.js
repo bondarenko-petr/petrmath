@@ -1,36 +1,34 @@
-const menu = document.querySelector('.menu');
-const navigation = document.querySelector('#navigation');
+const menuButton = document.querySelector('.mobile-toggle');
+const mobileMenu = document.querySelector('#mobileMenu');
 function closeMenu() {
-  menu.setAttribute('aria-expanded', 'false');
-  navigation.classList.remove('open');
+  mobileMenu.hidden = true;
+  menuButton.setAttribute('aria-expanded', 'false');
 }
-menu.addEventListener('click', () => {
-  const expanded = menu.getAttribute('aria-expanded') !== 'true';
-  menu.setAttribute('aria-expanded', String(expanded));
-  navigation.classList.toggle('open', expanded);
+menuButton.addEventListener('click', () => {
+  mobileMenu.hidden = !mobileMenu.hidden;
+  menuButton.setAttribute('aria-expanded', String(!mobileMenu.hidden));
 });
-navigation.querySelectorAll('a').forEach(link => link.addEventListener('click', closeMenu));
+mobileMenu.querySelectorAll('a').forEach(link => link.addEventListener('click', closeMenu));
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') closeMenu();
 });
-const dialog = document.querySelector('#booking-dialog');
-const selectedDirection = dialog.querySelector('.selected-direction');
-document.querySelectorAll('.booking').forEach(button => {
-  button.addEventListener('click', () => {
-    const direction = button.dataset.direction;
-    selectedDirection.hidden = !direction;
-    selectedDirection.textContent = direction ? `Ваше направление: ${direction}` : '';
-    dialog.showModal();
-  });
-});
-dialog.querySelectorAll('.close, .close-dialog').forEach(button => {
-  button.addEventListener('click', () => dialog.close());
-});
-const solutionToggle = document.querySelector('.solution-toggle');
-const solution = document.querySelector('#example-solution');
-solutionToggle.addEventListener('click', () => {
-  const expanded = solutionToggle.getAttribute('aria-expanded') !== 'true';
-  solutionToggle.setAttribute('aria-expanded', String(expanded));
-  solution.hidden = !expanded;
-  solutionToggle.innerHTML = `${expanded ? 'Скрыть решение' : 'Посмотреть решение'} <span aria-hidden="true">${expanded ? '−' : '＋'}</span>`;
+const dialog = document.querySelector('#feature-dialog');
+document.querySelectorAll('[data-feature]').forEach(link => link.addEventListener('click', event => {
+  event.preventDefault();
+  document.querySelector('#feature-title').textContent = `${link.dataset.feature}: раздел в разработке`;
+  dialog.showModal();
+}));
+dialog.querySelectorAll('.dialog-close, .dialog-done').forEach(button => button.addEventListener('click', () => dialog.close()));
+document.querySelector('#requestForm').addEventListener('submit', event => event.preventDefault());
+document.querySelector('#request_submit_btn').addEventListener('click', event => event.preventDefault());
+const backToTop = document.querySelector('.u-back-to-top');
+function scrollToTop() {
+  document.querySelector('.u-header').scrollIntoView();
+}
+backToTop.addEventListener('click', scrollToTop);
+backToTop.addEventListener('keydown', event => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    scrollToTop();
+  }
 });
