@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-app = FastAPI(title="Математика — ОГЭ и ЕГЭ")
+app = FastAPI(title="Круг Пи — математика, ОГЭ и ЕГЭ")
 ROOT = Path(__file__).resolve().parent
 DATABASE = Path(os.environ.get("TRIAL_REQUESTS_DB", str(ROOT / "data" / "trial_requests.sqlite3")))
 
