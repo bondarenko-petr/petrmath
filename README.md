@@ -100,3 +100,46 @@ sqlite3 -header -column data/trial_requests.sqlite3 'SELECT * FROM trial_request
 
 База находится вне публичного каталога сайта. Переменная `TRIAL_REQUESTS_DB`
 позволяет выбрать другой путь к базе, например на постоянном диске сервера.
+
+## Подключение MySQL локально
+
+Интеграция использует официальный MySQL Connector/Python:
+https://dev.mysql.com/doc/connector-python/en/connector-python-connectargs.html
+
+1. Установите MySQL Community Server с https://dev.mysql.com/downloads/mysql/
+   и запустите сервер. Для удобного просмотра таблиц можно установить MySQL Workbench.
+2. Обновите зависимости проекта:
+
+   ```bash
+   .venv/bin/python -m pip install -r requirements.txt
+   ```
+
+3. В MySQL Workbench подключитесь локально как администратор и выполните
+   содержимое `sql/mysql.sql`: появятся база `krug_pi` и таблица `trial_requests`.
+4. Создайте отдельного пользователя приложения. Замените пример пароля своим:
+
+   ```sql
+   CREATE USER 'krug_pi_app'@'127.0.0.1' IDENTIFIED BY 'replace_with_your_password';
+   GRANT INSERT, SELECT ON krug_pi.trial_requests TO 'krug_pi_app'@'127.0.0.1';
+   ```
+
+5. Скопируйте `.env.example` в `.env` в корне проекта:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Укажите `MYSQL_PASSWORD` и, при необходимости, остальные параметры.
+   `.env` автоматически читается при запуске и исключён из Git.
+   Настройки окружения PyCharm имеют приоритет над `.env`.
+6. Перезапустите `run.py`, отправьте заявку и проверьте её в Workbench:
+
+   ```sql
+   SELECT * FROM krug_pi.trial_requests ORDER BY id DESC;
+   ```
+
+Без настройки `DB_BACKEND` сайт продолжает использовать SQLite.
+С `DB_BACKEND=mysql` ошибки MySQL возвращают HTTP 503: незаметного переключения
+на SQLite нет. Старые заявки SQLite не удаляются и автоматически не переносятся.
+Файл `sql/mysql.sql` создаёт таблицу заранее: приложение не требует прав CREATE.
+После подключения MySQL данные хранятся на сервере MySQL, а не в файле SQLite.
