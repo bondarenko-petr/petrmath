@@ -12,7 +12,8 @@ html { scroll-behavior: smooth; }
 .u-section-4 .u-text-1 { margin-inline: 0; }
 .form-status { padding: 12px; font-size: 18px; line-height: 1.6; text-align: left; }
 #requestForm [disabled] { opacity: .75; cursor: not-allowed; }
-#request_submit_btn { opacity: .7; cursor: not-allowed; }
+#request_submit_btn { cursor: pointer; max-width: 100%; white-space: normal; }
+#request_submit_btn:disabled { opacity: .7; cursor: wait; }
 dialog { width: min(520px, calc(100% - 32px)); border: 0; border-radius: 16px; padding: 35px; font-family: 'Open Sans', Arial, sans-serif; }
 dialog::backdrop { background: #20083e99; }
 dialog h2 { font-size: 32px; margin: 15px 0; }
