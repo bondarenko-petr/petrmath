@@ -99,3 +99,7 @@ dialog p { font-size: 18px; line-height: 1.7; }
 @media (max-width: 575px) {
   .u-section-2 .u-layout-row > .u-image-1 { width: min(100%, 300px); }
 }
+
+/* Wordmark stays readable without a raster image at every screen density. */
+.u-header .u-image-1 { width: 200px; height: 70px; }
+@media (max-width: 575px) { .u-header .u-image-1 { width: 160px; height: 60px; } }
