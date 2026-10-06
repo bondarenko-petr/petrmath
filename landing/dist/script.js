@@ -19,8 +19,33 @@ document.querySelectorAll('[data-feature]').forEach(link => link.addEventListene
   dialog.showModal();
 }));
 dialog.querySelectorAll('.dialog-close, .dialog-done').forEach(button => button.addEventListener('click', () => dialog.close()));
-document.querySelector('#requestForm').addEventListener('submit', event => event.preventDefault());
-document.querySelector('#request_submit_btn').addEventListener('click', event => event.preventDefault());
+const requestForm = document.querySelector('#requestForm');
+const submitButton = document.querySelector('#request_submit_btn');
+const formStatus = document.querySelector('#form-status');
+requestForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const fields = new FormData(requestForm);
+  const courses = fields.getAll('courses');
+  if (!courses.length) {
+    formStatus.textContent = 'Выберите хотя бы один предмет занятий.';
+    return;
+  }
+  submitButton.disabled = true;
+  formStatus.textContent = 'Сохраняем заявку…';
+  try {
+    const response = await fetch('/api/trial-requests', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: fields.get('name'), email: fields.get('email'),
+        phone: fields.get('phone'), message: fields.get('message'), courses,
+        consent: fields.get('consent') === 'true'})
+    });
+    if (!response.ok) throw new Error('request failed');
+    requestForm.reset();
+    formStatus.textContent = 'Заявка успешно сохранена. Спасибо!';
+  } catch (error) {
+    formStatus.textContent = 'Не удалось сохранить заявку. Попробуйте ещё раз или свяжитесь с нами по контактам ниже.';
+  } finally { submitButton.disabled = false; }
+});
 const backToTop = document.querySelector('.u-back-to-top');
 function scrollToTop() {
   document.querySelector('.u-header').scrollIntoView();
