@@ -33,7 +33,8 @@ async function loadProfile() {
   document.querySelector('#welcome').textContent = 'Здравствуйте, ' + user.name + '!';
   document.querySelector('#profile-name').textContent = user.name;
   document.querySelector('#profile-email').textContent = user.email;
-  document.querySelector('#profile-role').textContent = user.role === 'student' ? 'Ученик' : 'Преподаватель';
+  document.querySelector('#admin-link').hidden = user.role !== 'admin';
+  document.querySelector('#profile-role').textContent = ({student:'Ученик',admin:'Администратор',teacher:'Преподаватель'})[user.role] || user.role;
 }
 document.querySelector('#login-tab').onclick = () => setMode('login');
 document.querySelector('#register-tab').onclick = () => setMode('register');
