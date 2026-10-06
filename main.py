@@ -2,6 +2,7 @@
 import sqlite3
 import mysql.connector
 from database import save_request
+from accounts import router as accounts_router
 from pathlib import Path
 from typing import Literal
 
@@ -39,6 +40,16 @@ def create_trial_request(request: TrialRequest) -> dict[str, str]:
     except (OSError, sqlite3.Error, mysql.connector.Error, ValueError) as error:
         raise HTTPException(status_code=503, detail="Не удалось сохранить заявку") from error
     return {"status": "saved"}
+
+
+app.include_router(accounts_router)
+
+
+@app.exception_handler(sqlite3.Error)
+@app.exception_handler(mysql.connector.Error)
+async def mysql_failure(request, error):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=503, content={"detail": "База временно недоступна"})
 
 
 # Database files stay outside the public static directory.
