@@ -2,7 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from accounts import database, profile, guard, hash_password
 import secrets
-import string
+import smtplib
+from mailer import send_student_credentials
+from accounts import verify, throttle
 import sqlite3
 import mysql.connector
 import time
@@ -64,7 +66,8 @@ class StudentData(BaseModel):
 
 
 def temporary_password():
-    return 'Aa1!' + ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(20))
+    alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+    return ''.join(secrets.choice(alphabet) for _ in range(8))
 
 
 def student_exists(cursor, p, user_id):
@@ -94,7 +97,7 @@ def create_student(data: StudentData, request: Request, response: Response, user
     except (sqlite3.IntegrityError,mysql.connector.IntegrityError):
         raise HTTPException(409, 'Логин или email уже используется')
     response.headers['Cache-Control']='no-store'
-    return {'id':user_id,'username':data.username,'temporary_password':password}
+    return {'id':user_id,'username':data.username,'email':str(data.email) if data.email else None,'temporary_password':password}
 
 
 @router.put('/students/{user_id}')
@@ -119,10 +122,10 @@ def reset_student(user_id: int, request: Request, response: Response, user=Depen
         student_exists(cursor,p,user_id)
         cursor.execute(f'UPDATE users SET password_hash={p},must_change_password=1,password_changed_at={p} WHERE id={p}',(hash_password(password),int(time.time()),user_id))
         cursor.execute(f'DELETE FROM sessions WHERE user_id={p}',(user_id,))
-        cursor.execute(f'SELECT username FROM users WHERE id={p}',(user_id,))
-        username=cursor.fetchone()['username']
+        cursor.execute(f'SELECT username,email FROM users WHERE id={p}',(user_id,))
+        student=cursor.fetchone()
     response.headers['Cache-Control']='no-store'
-    return {'username':username,'temporary_password':password}
+    return {'id':user_id,'username':student['username'],'email':student['email'],'temporary_password':password}
 
 
 class ActiveState(BaseModel):
@@ -139,3 +142,31 @@ def active_student(user_id: int, data: ActiveState, request: Request, response: 
             cursor.execute(f'DELETE FROM sessions WHERE user_id={p}',(user_id,))
     response.headers['Cache-Control']='no-store'
     return {'status':'updated'}
+
+
+class CredentialsEmail(BaseModel):
+    temporary_password: str = Field(min_length=8, max_length=128)
+
+
+@router.post('/students/{user_id}/send-credentials')
+def email_credentials(user_id: int, data: CredentialsEmail, request: Request, response: Response, user=Depends(require_admin)):
+    guard(request)
+    throttle(request)
+    with database() as (cursor,p):
+        student_exists(cursor,p,user_id)
+        cursor.execute(f'SELECT name,username,email,password_hash,must_change_password,is_active FROM users WHERE id={p}',(user_id,))
+        student=cursor.fetchone()
+        if not student['is_active'] or not student['must_change_password']:
+            raise HTTPException(409, 'У аккаунта нет действующего временного пароля')
+        if not student['email']:
+            raise HTTPException(422, 'Сначала укажите email ученика')
+        if not verify(data.temporary_password,student['password_hash']):
+            raise HTTPException(409, 'Временный пароль уже изменён. Выполните сброс при необходимости.')
+    try:
+        send_student_credentials(student['email'],student['name'],student['username'],data.temporary_password)
+    except ValueError as error:
+        raise HTTPException(503, 'Проверьте настройки SMTP, SITE_URL и email отправителя') from error
+    except (smtplib.SMTPException,OSError) as error:
+        raise HTTPException(502, 'Почтовый сервер не принял письмо. Данные для ручной передачи остаются действительными.') from error
+    response.headers['Cache-Control']='no-store'
+    return {'status':'accepted','email':student['email']}
