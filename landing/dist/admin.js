@@ -15,11 +15,12 @@ function addField(list, label, value) {
 }
 async function load() {
   if(busy) return;
-  busy = true; items.replaceChildren(); status.textContent = 'Загружаем…';
+  busy = true; clearCredentials(); items.replaceChildren(); status.textContent = 'Загружаем…';
   document.querySelectorAll('button').forEach(button => button.disabled = true);
   try {
     const result = await get(`admin/${section}?limit=${limit}&offset=${offset}`);
     document.querySelector('#dashboard').hidden = false;
+    document.querySelector('#create-student').hidden = section !== 'students';
     document.querySelector('#list-title').textContent = section === 'students' ? 'Зарегистрированные ученики' : 'Заявки на пробный урок';
     document.querySelector('#count').textContent = `Всего: ${result.total}. Показано: ${result.items.length}.`;
     for(const row of result.items) {
@@ -28,12 +29,21 @@ async function load() {
       const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = section === 'students' ? `Ученик №${row.id}` : `Заявка №${row.id}`;
       card.append(badge);
       addField(fields,'Email',row.email);
+      if(section === 'students') {
+        addField(fields,'Логин',row.username);addField(fields,'Статус',row.is_active?'Активен':'В архиве');addField(fields,'Телефон',row.phone);addField(fields,'Класс',row.school_grade);addField(fields,'Цена занятия',(row.default_price_kopecks/100).toFixed(2)+' ₽');addField(fields,'Длительность',row.default_duration_minutes+' мин');
+      }
       if(section === 'trial-requests') {
         addField(fields,'Дата заявки',String(row.created_at).replace('T',' '));
         addField(fields,'Телефон',row.phone); addField(fields,'Направления',row.courses);
         addField(fields,'Комментарий',row.message); addField(fields,'Согласие',row.consent ? 'Получено' : 'Нет');
       }
-      card.append(title,fields); items.append(card);
+      card.append(title,fields);
+      if(section === 'students') {
+        const actions=document.createElement('div');actions.className='student-actions';
+        for(const [label,handler] of [['Редактировать',()=>editStudent(row)],['Сбросить пароль',()=>resetPassword(row)],[row.is_active?'Архивировать':'Восстановить',()=>toggleActive(row)]]){const button=document.createElement('button');button.textContent=label;button.onclick=handler;actions.append(button);}
+        card.append(actions);
+      }
+      items.append(card);
     }
     status.textContent = result.items.length ? '' : 'Пока записей нет.';
     document.querySelectorAll('button').forEach(button => button.disabled = false);
@@ -56,3 +66,24 @@ document.querySelector('#refresh').onclick=()=>load();
 load();
 
 document.querySelector('a[href="#students-tab"]').addEventListener('click', () => { if(!busy) choose('students'); });
+
+let editing=null;
+const studentForm=document.querySelector('#student-form');
+async function mutate(path,method,data){
+ const response=await fetch('/api/admin/'+path,{method,headers:{'Content-Type':'application/json','X-Requested-With':'KrugPi'},body:JSON.stringify(data)});
+ const result=await response.json();if(!response.ok)throw new Error(typeof result.detail==='string'?result.detail:'Проверьте заполнение полей.');return result;
+}
+function clearCredentials(){document.querySelector('#credentials').hidden=true;document.querySelector('#issued-password').textContent='';document.querySelector('#issued-username').textContent='';}
+function showCredentials(data){document.querySelector('#issued-username').textContent=data.username;document.querySelector('#issued-password').textContent=data.temporary_password;document.querySelector('#credentials').hidden=false;document.querySelector('#credentials').scrollIntoView({block:'center'});}
+function editStudent(row=null){clearCredentials();editing=row?.id??null;studentForm.reset();document.querySelector('#student-editor').hidden=false;document.querySelector('#editor-title').textContent=row?'Редактировать ученика':'Добавить ученика';if(row){for(const field of ['name','username','email','phone','school_grade','default_duration_minutes'])studentForm.elements[field].value=row[field]??'';studentForm.elements.price.value=(row.default_price_kopecks/100).toFixed(2);}studentForm.elements.name.focus();}
+document.querySelector('#create-student').onclick=()=>editStudent();
+document.querySelector('#cancel-editor').onclick=()=>{document.querySelector('#student-editor').hidden=true;studentForm.reset();};
+document.querySelector('#close-credentials').onclick=clearCredentials;
+studentForm.addEventListener('submit',async event=>{
+ event.preventDefault();const price=studentForm.elements.price.value.replace(',','.');if(!/^\d+(\.\d{1,2})?$/.test(price)){status.textContent='Введите цену в рублях с точностью до копеек.';return;}
+ const [rubles,kopecks='']=price.split('.');const data={name:studentForm.elements.name.value,username:studentForm.elements.username.value,email:studentForm.elements.email.value||null,phone:studentForm.elements.phone.value,school_grade:studentForm.elements.school_grade.value?Number(studentForm.elements.school_grade.value):null,default_price_kopecks:Number(rubles)*100+Number(kopecks.padEnd(2,'0')),default_duration_minutes:Number(studentForm.elements.default_duration_minutes.value)};
+ const button=studentForm.querySelector('button[type=submit]');button.disabled=true;
+ try{const result=await mutate('students'+(editing?'/'+editing:''),editing?'PUT':'POST',data);document.querySelector('#student-editor').hidden=true;studentForm.reset();offset=0;await load();if(result.temporary_password)showCredentials(result);}catch(error){status.textContent=error.message;}finally{button.disabled=false;}
+});
+async function resetPassword(row){if(!confirm('Сбросить пароль ученика '+row.name+'? Старые сессии будут завершены.'))return;clearCredentials();try{const data=await mutate('students/'+row.id+'/reset-password','POST',{});showCredentials(data);}catch(error){status.textContent=error.message;}}
+async function toggleActive(row){if(!confirm((row.is_active?'Архивировать':'Восстановить')+' ученика '+row.name+'?'))return;clearCredentials();try{await mutate('students/'+row.id+'/active','PATCH',{is_active:!row.is_active});await load();}catch(error){status.textContent=error.message;}}

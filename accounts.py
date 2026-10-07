@@ -36,8 +36,17 @@ def database():
         path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(path, timeout=10)
         connection.row_factory = sqlite3.Row
+        columns = {row[1] for row in connection.execute('PRAGMA table_info(users)')}
+        if columns and 'username' not in columns:
+            connection.execute('PRAGMA foreign_keys=OFF')
+            connection.execute("CREATE TABLE users_new (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'student', username TEXT NOT NULL UNIQUE COLLATE NOCASE, must_change_password INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL DEFAULT 0, password_changed_at INTEGER)")
+            connection.execute("INSERT INTO users_new (id,name,email,password_hash,role,username) SELECT id,name,email,password_hash,role,lower(email) FROM users")
+            connection.execute('DROP TABLE users')
+            connection.execute('ALTER TABLE users_new RENAME TO users')
+            connection.commit()
         connection.execute('PRAGMA foreign_keys=ON')
-        connection.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT \'student\')')
+        connection.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'student', username TEXT NOT NULL UNIQUE COLLATE NOCASE, must_change_password INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL DEFAULT 0, password_changed_at INTEGER)")
+        connection.execute("CREATE TABLE IF NOT EXISTS student_profiles (user_id INTEGER PRIMARY KEY REFERENCES users(id), phone TEXT NOT NULL DEFAULT '', school_grade INTEGER, default_price_kopecks INTEGER NOT NULL DEFAULT 0, default_duration_minutes INTEGER NOT NULL DEFAULT 60)")
         connection.execute('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL)')
         cursor = connection.cursor()
         placeholder = '?'
@@ -68,23 +77,13 @@ def verify(password, stored):
 
 
 class Credentials(BaseModel):
-    email: EmailStr = Field(max_length=254)
+    username: str = Field(min_length=1, max_length=254)
     password: str = Field(min_length=1, max_length=128)
 
-    @field_validator('email', mode='after')
+    @field_validator('username', mode='after')
     @classmethod
     def normalize(cls, value):
-        return str(value).lower()
-
-
-class Registration(Credentials):
-    name: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=10, max_length=128)
-
-    @field_validator('name', mode='before')
-    @classmethod
-    def strip(cls, value):
-        return value.strip() if isinstance(value, str) else value
+        return str(value).strip().lower()
 
 
 def guard(request):
@@ -121,18 +120,9 @@ def session(cursor, placeholder, user_id, request, response):
     response.headers['Cache-Control'] = 'no-store'
 
 
-@router.post('/register', status_code=201)
-def register(data: Registration, request: Request, response: Response):
-    guard(request)
-    throttle(request)
-    encoded = hash_password(data.password)
-    try:
-        with database() as (cursor, p):
-            cursor.execute(f'INSERT INTO users (name,email,password_hash) VALUES ({p},{p},{p})', (data.name, str(data.email), encoded))
-            session(cursor, p, cursor.lastrowid, request, response)
-    except (sqlite3.IntegrityError, mysql.connector.IntegrityError):
-        raise HTTPException(409, 'Этот email уже зарегистрирован')
-    return {'status': 'registered'}
+@router.post('/register')
+def register():
+    raise HTTPException(403, 'Аккаунт ученика создаёт преподаватель')
 
 
 @router.post('/login')
@@ -140,11 +130,11 @@ def login(data: Credentials, request: Request, response: Response):
     guard(request)
     throttle(request)
     with database() as (cursor, p):
-        cursor.execute(f'SELECT id,password_hash FROM users WHERE email={p}', (str(data.email),))
+        cursor.execute(f'SELECT id,password_hash,is_active FROM users WHERE username={p}', (data.username,))
         user = cursor.fetchone()
         valid = verify(data.password, user['password_hash'] if user else DUMMY_HASH)
-        if not user or not valid:
-            raise HTTPException(401, 'Неверный email или пароль')
+        if not user or not valid or not user['is_active']:
+            raise HTTPException(401, 'Неверный логин или пароль')
         session(cursor, p, user['id'], request, response)
     return {'status': 'authenticated'}
 
@@ -155,7 +145,7 @@ def profile(request: Request, response: Response):
     if not token:
         raise HTTPException(401, 'Войдите в аккаунт')
     with database() as (cursor, p):
-        cursor.execute(f'SELECT u.id,u.name,u.email,u.role FROM users u JOIN sessions s ON u.id=s.user_id WHERE s.token_hash={p} AND s.expires_at>{p}',
+        cursor.execute(f'SELECT u.id,u.name,u.email,u.username,u.role,u.must_change_password FROM users u JOIN sessions s ON u.id=s.user_id WHERE s.token_hash={p} AND s.expires_at>{p} AND u.is_active=1',
                        (hashlib.sha256(token.encode()).hexdigest(), int(time.time())))
         user = cursor.fetchone()
     if not user:
@@ -174,3 +164,29 @@ def logout(request: Request, response: Response):
     response.delete_cookie(COOKIE)
     response.headers['Cache-Control'] = 'no-store'
     return {'status': 'logged_out'}
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=10, max_length=128)
+
+
+@router.post('/change-password')
+def change_password(data: PasswordChange, request: Request, response: Response):
+    guard(request)
+    throttle(request)
+    user = profile(request, response)
+    with database() as (cursor, p):
+        cursor.execute(f'SELECT password_hash FROM users WHERE id={p}', (user['id'],))
+        old = cursor.fetchone()['password_hash']
+        if not verify(data.current_password, old):
+            raise HTTPException(401, 'Неверный текущий пароль')
+        if verify(data.new_password, old):
+            raise HTTPException(422, 'Новый пароль должен отличаться от текущего')
+        cursor.execute(f'UPDATE users SET password_hash={p},must_change_password=0,password_changed_at={p} WHERE id={p} AND password_hash={p} AND is_active=1',
+                       (hash_password(data.new_password), int(time.time()), user['id'], old))
+        if cursor.rowcount != 1:
+            raise HTTPException(409, 'Аккаунт изменился. Войдите снова.')
+        cursor.execute(f'DELETE FROM sessions WHERE user_id={p}', (user['id'],))
+        session(cursor, p, user['id'], request, response)
+    return {'status':'password_changed'}
