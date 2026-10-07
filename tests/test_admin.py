@@ -1,40 +1,34 @@
-import os
-import sqlite3
-import tempfile
-import unittest
-from contextlib import closing
-from unittest.mock import patch
-from fastapi.testclient import TestClient
-from main import app
-import accounts
+import tests.test_accounts as support
 
 
-class AdminTests(unittest.TestCase):
-    def test_authorization_pagination_and_revocation(self):
-        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'DB_BACKEND':'sqlite','TRIAL_REQUESTS_DB':directory+'/test.sqlite3','COOKIE_SECURE':'false'}):
-            accounts.attempts.clear()
-            client = TestClient(app)
-            paths = ['/api/admin/students','/api/admin/trial-requests']
-            for path in paths:
-                self.assertEqual(client.get(path).status_code,401)
-            headers={'X-Requested-With':'KrugPi'}
-            for i in range(3):
-                self.assertEqual(client.post('/api/auth/register',json={'name':f'Ученик {i}','email':f'test{i}@example.com','password':'Long test password!','role':'admin'},headers=headers).status_code,201)
-            for path in paths:
-                self.assertEqual(client.get(path).status_code,403)
-            client.post('/api/trial-requests',json={'name':'Тест','email':'test@example.com','courses':['ЕГЭ'],'consent':True})
-            with closing(sqlite3.connect(directory+'/test.sqlite3')) as db:
-                db.execute("UPDATE users SET role='admin' WHERE email='test2@example.com'")
-                db.commit()
-            result=client.get('/api/admin/students?limit=1&offset=1')
-            self.assertEqual(result.status_code,200)
-            self.assertEqual(result.json()['total'],2)
-            self.assertEqual(len(result.json()['items']),1)
-            self.assertNotIn('password_hash',result.text)
-            self.assertEqual(result.headers['cache-control'],'no-store')
-            self.assertEqual(client.get('/api/admin/trial-requests').json()['items'][0]['courses'],'ЕГЭ')
-            self.assertEqual(client.get('/api/admin/students?limit=500').status_code,422)
-            with closing(sqlite3.connect(directory+'/test.sqlite3')) as db:
-                db.execute("UPDATE users SET role='student'")
-                db.commit()
-            self.assertEqual(client.get('/api/admin/students').status_code,403)
+class StudentManagementTests(support.AccountTests):
+    def test_management_flow(self):
+        self.post('login',self.data)
+        self.assertEqual(self.client.get('/api/admin/students').status_code,403)
+        support.seed_user('Админ','admin','Admin test password!','admin')
+        self.post('login',{'username':'admin','password':'Admin test password!'})
+        data={'name':'Новый ученик','username':'learner','email':None,'phone':'123','school_grade':9,'default_price_kopecks':150050,'default_duration_minutes':45}
+        result=self.client.post('/api/admin/students',json=data,headers=self.headers)
+        self.assertEqual(result.status_code,201)
+        self.assertEqual(self.client.post('/api/admin/students',json=data|{'username':'badprice','default_price_kopecks':1.5},headers=self.headers).status_code,422)
+        created=result.json();password=created['temporary_password'];uid=created['id']
+        self.assertNotIn(password,self.client.get('/api/admin/students').text)
+        self.assertEqual(self.client.post('/api/admin/students',json=data|{'username':'LEARNER'},headers=self.headers).status_code,409)
+        from fastapi.testclient import TestClient
+        from main import app
+        learner=TestClient(app)
+        self.assertEqual(learner.post('/api/auth/login',json={'username':'LEARNER','password':password},headers=self.headers).status_code,200)
+        self.assertTrue(learner.get('/api/auth/me').json()['must_change_password'])
+        self.assertEqual(learner.get('/api/admin/students').status_code,403)
+        self.assertEqual(learner.post('/api/auth/change-password',json={'current_password':password,'new_password':'Own new password!'},headers=self.headers).status_code,200)
+        self.assertFalse(learner.get('/api/auth/me').json()['must_change_password'])
+        self.assertEqual(self.client.put(f'/api/admin/students/{uid}',json=data|{'default_price_kopecks':200000},headers=self.headers).status_code,200)
+        reset=self.client.post(f'/api/admin/students/{uid}/reset-password',json={},headers=self.headers)
+        self.assertEqual(reset.status_code,200)
+        self.assertEqual(learner.get('/api/auth/me').status_code,401)
+        self.assertEqual(self.client.patch(f'/api/admin/students/{uid}/active',json={'is_active':False},headers=self.headers).status_code,200)
+        self.assertEqual(learner.post('/api/auth/login',json={'username':'learner','password':reset.json()['temporary_password']},headers=self.headers).status_code,401)
+        self.assertEqual(self.client.post('/api/admin/students/'+str(self.id)+'/reset-password',json={},headers={}).status_code,403)
+        self.assertEqual(self.client.get('/api/admin/students?limit=500').status_code,422)
+        admin_id=self.client.get('/api/auth/me').json()['id']
+        self.assertEqual(self.client.patch(f'/api/admin/students/{admin_id}/active',json={'is_active':False},headers=self.headers).status_code,404)
