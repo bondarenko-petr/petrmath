@@ -29,11 +29,13 @@ async function api(path, data) {
 async function loadProfile() {
   const user = await api('me');
   document.querySelector('#auth-panel').hidden = true;
+  document.querySelector('main').classList.add('profile-view');
   document.querySelector('#profile-panel').hidden = false;
   document.querySelector('#welcome').textContent = 'Здравствуйте, ' + user.name + '!';
   document.querySelector('#profile-name').textContent = user.name;
   document.querySelector('#profile-email').textContent = user.email;
   document.querySelector('#admin-link').hidden = user.role !== 'admin';
+  document.querySelectorAll('.student-content').forEach(element => element.hidden = user.role === 'admin');
   document.querySelector('#profile-role').textContent = ({student:'Ученик',admin:'Администратор',teacher:'Преподаватель'})[user.role] || user.role;
 }
 document.querySelector('#login-tab').onclick = () => setMode('login');
@@ -55,7 +57,7 @@ form.addEventListener('submit', async event => {
 });
 document.querySelector('#logout').onclick = async () => {
   const button = document.querySelector('#logout'); button.disabled = true;
-  try { await api('logout', {}); document.querySelector('#profile-panel').hidden = true; document.querySelector('#auth-panel').hidden = false; setMode('login'); status.textContent = 'Вы вышли из аккаунта.'; }
+  try { await api('logout', {}); document.querySelector('#profile-panel').hidden = true; document.querySelector('main').classList.remove('profile-view'); document.querySelector('#auth-panel').hidden = false; setMode('login'); status.textContent = 'Вы вышли из аккаунта.'; }
   catch(error){status.textContent=error.message;}
   finally{button.disabled=false;}
 };

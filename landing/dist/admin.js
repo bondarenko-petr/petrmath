@@ -24,7 +24,9 @@ async function load() {
     document.querySelector('#count').textContent = `Всего: ${result.total}. Показано: ${result.items.length}.`;
     for(const row of result.items) {
       const card = document.createElement('article'), title = document.createElement('h3'), fields = document.createElement('dl');
-      card.className = 'record'; title.textContent = `№${row.id} · ${row.name}`;
+      card.className = 'record'; title.textContent = row.name;
+      const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = section === 'students' ? `Ученик №${row.id}` : `Заявка №${row.id}`;
+      card.append(badge);
       addField(fields,'Email',row.email);
       if(section === 'trial-requests') {
         addField(fields,'Дата заявки',String(row.created_at).replace('T',' '));
@@ -52,3 +54,5 @@ document.querySelector('#prev').onclick=()=>{offset=Math.max(0,offset-limit);loa
 document.querySelector('#next').onclick=()=>{offset+=limit;load();};
 document.querySelector('#refresh').onclick=()=>load();
 load();
+
+document.querySelector('a[href="#students-tab"]').addEventListener('click', () => { if(!busy) choose('students'); });
