@@ -1,3 +1,4 @@
+let issuedCredentials=null;
 const status = document.querySelector('#status');
 const items = document.querySelector('#items');
 let section = 'trial-requests', offset = 0, busy = false;
@@ -73,8 +74,8 @@ async function mutate(path,method,data){
  const response=await fetch('/api/admin/'+path,{method,headers:{'Content-Type':'application/json','X-Requested-With':'KrugPi'},body:JSON.stringify(data)});
  const result=await response.json();if(!response.ok)throw new Error(typeof result.detail==='string'?result.detail:'Проверьте заполнение полей.');return result;
 }
-function clearCredentials(){document.querySelector('#credentials').hidden=true;document.querySelector('#issued-password').textContent='';document.querySelector('#issued-username').textContent='';}
-function showCredentials(data){document.querySelector('#issued-username').textContent=data.username;document.querySelector('#issued-password').textContent=data.temporary_password;document.querySelector('#credentials').hidden=false;document.querySelector('#credentials').scrollIntoView({block:'center'});}
+function clearCredentials(){issuedCredentials=null;document.querySelector('#email-status').textContent='';document.querySelector('#send-credentials').hidden=true;document.querySelector('#credentials').hidden=true;document.querySelector('#issued-password').textContent='';document.querySelector('#issued-username').textContent='';}
+function showCredentials(data){issuedCredentials=data;document.querySelector('#email-help').textContent=data.email?'Письмо будет отправлено на '+data.email+'. Оно объяснит, как войти и сменить временный пароль.':'Email не указан. Передайте пароль вручную; для отправки укажите email и выполните сброс пароля.';document.querySelector('#send-credentials').hidden=!data.email;document.querySelector('#send-credentials').disabled=false;document.querySelector('#email-status').textContent='';document.querySelector('#issued-username').textContent=data.username;document.querySelector('#issued-password').textContent=data.temporary_password;document.querySelector('#credentials').hidden=false;document.querySelector('#credentials').scrollIntoView({block:'center'});}
 function editStudent(row=null){clearCredentials();editing=row?.id??null;studentForm.reset();document.querySelector('#student-editor').hidden=false;document.querySelector('#editor-title').textContent=row?'Редактировать ученика':'Добавить ученика';if(row){for(const field of ['name','username','email','phone','school_grade','default_duration_minutes'])studentForm.elements[field].value=row[field]??'';studentForm.elements.price.value=(row.default_price_kopecks/100).toFixed(2);}studentForm.elements.name.focus();}
 document.querySelector('#create-student').onclick=()=>editStudent();
 document.querySelector('#cancel-editor').onclick=()=>{document.querySelector('#student-editor').hidden=true;studentForm.reset();};
@@ -87,3 +88,12 @@ studentForm.addEventListener('submit',async event=>{
 });
 async function resetPassword(row){if(!confirm('Сбросить пароль ученика '+row.name+'? Старые сессии будут завершены.'))return;clearCredentials();try{const data=await mutate('students/'+row.id+'/reset-password','POST',{});showCredentials(data);}catch(error){status.textContent=error.message;}}
 async function toggleActive(row){if(!confirm((row.is_active?'Архивировать':'Восстановить')+' ученика '+row.name+'?'))return;clearCredentials();try{await mutate('students/'+row.id+'/active','PATCH',{is_active:!row.is_active});await load();}catch(error){status.textContent=error.message;}}
+
+document.querySelector('#send-credentials').onclick=async()=>{
+ const data=issuedCredentials;if(!data)return;
+ if(!confirm('Отправить логин и временный пароль на '+data.email+'?'))return;
+ const button=document.querySelector('#send-credentials');button.disabled=true;
+ document.querySelector('#email-status').textContent='Отправляем письмо…';
+ try{await mutate('students/'+data.id+'/send-credentials','POST',{temporary_password:data.temporary_password});if(issuedCredentials===data)document.querySelector('#email-status').textContent='Почтовый сервер принял письмо. Попросите ученика проверить входящие и папку «Спам».';}
+ catch(error){if(issuedCredentials===data){document.querySelector('#email-status').textContent=error.message;button.disabled=false;}}
+};
