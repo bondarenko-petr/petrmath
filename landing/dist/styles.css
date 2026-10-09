@@ -103,3 +103,6 @@ dialog p { font-size: 18px; line-height: 1.7; }
 /* Wordmark stays readable without a raster image at every screen density. */
 .u-header .u-image-1 { width: 200px; height: 70px; }
 @media (max-width: 575px) { .u-header .u-image-1 { width: 160px; height: 60px; } }
+
+/* A single account action replaces the two overlapping desktop buttons. */
+.u-section-1 a[data-account-link] { margin: 1px 0 0 auto; }
