@@ -57,3 +57,21 @@ backToTop.addEventListener('keydown', event => {
     scrollToTop();
   }
 });
+
+async function updateAccountLinks() {
+  const links = document.querySelectorAll('[data-account-link]');
+  let label = 'Войти', destination = 'account.html';
+  try {
+    const response = await fetch('/api/auth/me', {cache: 'no-store'});
+    if (response.ok) {
+      const user = await response.json();
+      label = 'Личный кабинет';
+      if (user.role === 'admin' && !user.must_change_password) destination = 'admin.html';
+    }
+  } catch (error) { /* Keep the login link available if the API is unreachable. */ }
+  for (const link of links) {
+    (link.querySelector('[data-account-label]') || link).textContent = label;
+    link.setAttribute('href', destination);
+  }
+}
+window.addEventListener('pageshow', updateAccountLinks);
