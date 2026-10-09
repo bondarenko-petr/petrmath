@@ -104,5 +104,25 @@ dialog p { font-size: 18px; line-height: 1.7; }
 .u-header .u-image-1 { width: 200px; height: 70px; }
 @media (max-width: 575px) { .u-header .u-image-1 { width: 160px; height: 60px; } }
 
-/* A single account action replaces the two overlapping desktop buttons. */
-.u-section-1 a[data-account-link] { margin: 1px 0 0 auto; }
+/* Keep the account action in the header flow at every viewport width. */
+.u-header .account-action {
+  order: 3; display: inline-flex; align-items: center; justify-content: center;
+  gap: 8px; flex-shrink: 0; min-height: 44px; padding: 10px 16px;
+  border-radius: 10px; background: #35b5fa; color: #fff;
+  font-size: clamp(16px, 1.3vw, 20px); font-weight: 600;
+  line-height: 1.25; text-decoration: none; white-space: nowrap;
+}
+.u-header .account-action:hover { background: #168cce; }
+.u-header .account-action:focus-visible { outline: 3px solid #5813dd; outline-offset: 3px; }
+@media (max-width: 1199px) {
+  .u-header { gap: 12px; }
+  .u-header .u-nav-1 { gap: 14px; }
+}
+@media (max-width: 991px) {
+  .u-header .u-menu-1 { margin-left: auto !important; }
+}
+@media (max-width: 575px) {
+  .u-header { flex-wrap: wrap; gap: 8px; }
+  .u-header .u-image-1 { width: 140px; height: 52px; }
+  .u-header .account-action { flex-basis: 100%; padding: 10px 12px; font-size: 16px; }
+}
