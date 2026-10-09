@@ -1,0 +1,20 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Расписание — Круг Пи</title><link rel="icon" href="assets/images/favicon/favicon.svg"><link rel="stylesheet" href="account.css"><link rel="stylesheet" href="schedule.css"><script src="schedule.js" defer></script></head><body>
+<header><a href="/"><img src="assets/images/krug-pi.svg" alt="Круг Пи" width="200" height="56"></a><a id="back" href="account.html">Личный кабинет</a></header>
+<main class="schedule-main"><p class="eyebrow">Круг Пи · Занятия</p><h1>Расписание</h1><p id="zone" class="muted"></p><p id="status" role="status" aria-live="polite">Проверяем доступ…</p>
+<div id="content" hidden><div class="schedule-toolbar"><button id="add" hidden>+ Создать занятие</button><button id="refresh">Обновить</button></div>
+<section id="editor" class="panel" hidden><h2 id="editor-title">Новое занятие</h2><form id="lesson-form">
+<label>Ученик<select name="student_id" required></select></label>
+<label>Дата и время начала<input name="starts_at" type="datetime-local" required></label>
+<label>Длительность, минуты<input name="duration_minutes" type="number" min="1" max="1440" required value="60"></label>
+<label>Цена урока, ₽<input name="price" inputmode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?" required value="0"></label>
+<label>Тема (необязательно)<input name="topic" maxlength="300"></label>
+<label>Ссылка на онлайн-урок (необязательно)<input name="meeting_url" type="url" placeholder="https://…" maxlength="2000"></label>
+<fieldset id="recurrence"><legend>Повторять по дням недели (необязательно)</legend><div class="weekdays">
+<label><input type="checkbox" name="weekday" value="0">Пн</label><label><input type="checkbox" name="weekday" value="1">Вт</label><label><input type="checkbox" name="weekday" value="2">Ср</label><label><input type="checkbox" name="weekday" value="3">Чт</label><label><input type="checkbox" name="weekday" value="4">Пт</label><label><input type="checkbox" name="weekday" value="5">Сб</label><label><input type="checkbox" name="weekday" value="6">Вс</label></div>
+<label>Последняя дата серии<input name="recurrence_end" type="date"></label><p class="muted small">Занятия создаются до этой даты включительно, максимум на год. Время сохраняется в часовом поясе расписания.</p></fieldset>
+<label id="edit-scope" hidden>Применить изменения<select name="scope"><option value="one">Только к этому занятию</option><option value="following">К этому и следующим в серии</option><option value="series">Ко всем будущим занятиям серии</option></select></label>
+<p class="muted small">В серии перенос сдвигает даты и время на одинаковую величину. Прошедшие и проведённые занятия сохраняются.</p>
+<p id="form-status" role="status"></p><div class="schedule-toolbar"><button type="submit">Сохранить</button><button type="button" id="cancel">Отмена</button></div></form></section>
+<section class="panel"><div class="schedule-toolbar"><button id="previous-week">← Неделя</button><h2 id="week-label"></h2><button id="next-week">Неделя →</button><button id="this-week">Текущая неделя</button></div><div id="calendar"></div></section>
+<section class="panel"><h2>Все занятия и история</h2><form id="filters" class="schedule-filters"><label>С даты<input name="from_date" type="date"></label><label>По дату включительно<input name="to_date" type="date"></label><label id="student-filter" hidden>Ученик<select name="student_id"><option value="">Все ученики</option></select></label><button type="submit">Показать</button></form><p id="list-count"></p><div id="lessons-list"></div><div class="schedule-toolbar"><button id="previous-page">Назад</button><button id="next-page">Далее</button></div></section>
+</div></main></body></html>

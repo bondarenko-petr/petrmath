@@ -16,6 +16,7 @@ async function loadProfile(){
  document.querySelector('#password-panel').hidden=true;document.querySelector('#profile-panel').hidden=false;document.querySelector('main').classList.add('profile-view');
  document.querySelector('#welcome').textContent='Здравствуйте, '+currentUser.name+'!';document.querySelector('#profile-name').textContent=currentUser.name;
  document.querySelector('#profile-email').textContent=currentUser.username;document.querySelector('#profile-role').textContent=currentUser.role==='admin'?'Администратор':'Ученик';
+ if(currentUser.role==='student')loadLessonSummary();
  document.querySelector('#admin-link').hidden=currentUser.role!=='admin';document.querySelectorAll('.student-content').forEach(e=>e.hidden=currentUser.role==='admin');
 }
 form.addEventListener('submit',async event=>{event.preventDefault();const button=document.querySelector('#submit');button.disabled=true;status.textContent='Входим…';try{await api('login',{username:form.elements.username.value,password:form.elements.password.value});form.reset();await loadProfile();}catch(error){status.textContent=error.message;}finally{button.disabled=false;}});

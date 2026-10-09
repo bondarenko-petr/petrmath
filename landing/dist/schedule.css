@@ -1,0 +1,17 @@
+.schedule-main {max-width:1200px;width:100%;margin:auto;padding:24px;box-sizing:border-box}
+.schedule-main select,.schedule-main input:not([type=checkbox]) {width:100%;min-height:44px;padding:10px;border:1px solid #d8c9ee;border-radius:8px;box-sizing:border-box;font:inherit;background:white;color:#321653}
+.schedule-toolbar {display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:12px 0}
+.schedule-toolbar h2 {margin:0;flex:1}
+.schedule-main button {min-height:44px;cursor:pointer}
+.schedule-main .panel {margin-top:20px;min-width:0}
+#lesson-form {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+#lesson-form label {display:grid;gap:6px}#lesson-form fieldset,#lesson-form>p,#lesson-form>.schedule-toolbar {grid-column:1/-1}
+.weekdays {display:flex;flex-wrap:wrap;gap:12px}.weekdays label {display:flex!important;align-items:center;min-height:44px}.weekdays input {width:20px;height:20px}
+#calendar {display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.calendar-day {background:#f7f3ff;border-radius:12px;padding:10px;min-width:0}
+.calendar-day h3 {font-size:16px;margin-top:0}.lesson-card {border:1px solid #e5dcf3;border-radius:10px;padding:12px;margin:8px 0;background:white;overflow-wrap:anywhere;font-size:16px}
+.lesson-card p {margin:8px 0}.lesson-card h3 {font-size:18px;margin:8px 0}.lesson-card.cancelled {opacity:.7}.lesson-card.completed {border-color:#56a37a}.lesson-actions {display:flex;flex-wrap:wrap;gap:6px}.lesson-actions button {font-size:14px;padding:6px 10px}
+.schedule-filters {display:flex;flex-wrap:wrap;gap:12px;align-items:end}.schedule-filters label {flex:1;min-width:160px}
+#calendar .lesson-actions {display:none}#calendar .lesson-card {padding:8px;font-size:14px}
+@media(max-width:1100px){#calendar {grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:650px){.schedule-main{padding:16px}#calendar,#lesson-form {grid-template-columns:1fr}.schedule-toolbar h2 {flex-basis:100%;order:-1}.schedule-filters label {min-width:100%}}
