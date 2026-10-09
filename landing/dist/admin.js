@@ -21,6 +21,7 @@ async function load() {
   try {
     const result = await get(`admin/${section}?limit=${limit}&offset=${offset}`);
     document.querySelector('#dashboard').hidden = false;
+    loadLessonSummary();
     document.querySelector('#create-student').hidden = section !== 'students';
     document.querySelector('#list-title').textContent = section === 'students' ? 'Зарегистрированные ученики' : 'Заявки на пробный урок';
     document.querySelector('#count').textContent = `Всего: ${result.total}. Показано: ${result.items.length}.`;
