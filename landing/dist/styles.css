@@ -107,12 +107,12 @@ dialog p { font-size: 18px; line-height: 1.7; }
 /* Keep the account action in the header flow at every viewport width. */
 .u-header .account-action {
   order: 3; display: inline-flex; align-items: center; justify-content: center;
-  gap: 8px; flex-shrink: 0; min-height: 44px; padding: 10px 16px;
-  border-radius: 10px; background: #35b5fa; color: #fff;
+  gap: 8px; flex-shrink: 0; min-height: 44px; min-width: 112px; padding: 10px 24px;
+  border-radius: 999px; background: #6814ee; color: #fff;
   font-size: clamp(16px, 1.3vw, 20px); font-weight: 600;
   line-height: 1.25; text-decoration: none; white-space: nowrap;
 }
-.u-header .account-action:hover { background: #168cce; }
+.u-header .account-action:hover { background: #5410c4; }
 .u-header .account-action:focus-visible { outline: 3px solid #5813dd; outline-offset: 3px; }
 @media (max-width: 1199px) {
   .u-header { gap: 12px; }
@@ -122,7 +122,7 @@ dialog p { font-size: 18px; line-height: 1.7; }
   .u-header .u-menu-1 { margin-left: auto !important; }
 }
 @media (max-width: 575px) {
-  .u-header { flex-wrap: wrap; gap: 8px; }
+  .u-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .u-header .u-image-1 { width: 140px; height: 52px; }
-  .u-header .account-action { flex-basis: 100%; padding: 10px 12px; font-size: 16px; }
+  .u-header .account-action { grid-column: 1 / -1; justify-self: end; padding: 10px 22px; font-size: 16px; }
 }
