@@ -3,6 +3,10 @@ const status = document.querySelector('#status');
 const items = document.querySelector('#items');
 let section = 'trial-requests', offset = 0, busy = false;
 const limit = 20;
+let studentSearch='',studentView='all',studentSort='name';
+const studentFilters=document.querySelector('#student-filters');
+studentFilters.onsubmit=event=>{event.preventDefault();if(busy||trialSaving)return;studentSearch=studentFilters.elements.search.value.trim();studentView=studentFilters.elements.view.value;studentSort=studentFilters.elements.sort.value;offset=0;load()};
+document.querySelector('#student-reset').onclick=()=>{if(busy||trialSaving)return;studentFilters.reset();studentSearch='';studentView='all';studentSort='name';offset=0;load()};
 let trialView='active',trialSearch='',trialStatus='',trialSaving=false;
 const trialStatuses={new:'Новая',contacting:'Связываемся',trial_scheduled:'Пробный назначен',enrolled:'Стал учеником',closed:'Закрыта'};
 const trialReasons={declined:'Передумали',no_response:'Нет ответа',duplicate:'Дубль',spam:'Спам',other:'Другое'};
@@ -27,6 +31,18 @@ document.querySelector('#trial-active').onclick=()=>chooseTrialView('active');do
 document.querySelector('#trial-filters').onsubmit=event=>{event.preventDefault();if(busy||trialSaving)return;trialSearch=event.currentTarget.elements.search.value.trim();trialStatus=event.currentTarget.elements.status.value;offset=0;load()};
 document.querySelector('#trial-reset').onclick=()=>{if(busy||trialSaving)return;trialSearch='';trialStatus='';document.querySelector('#trial-filters').reset();offset=0;load()};
 
+function renderStudentTable(rows){
+ const wrapper=document.createElement('div');wrapper.className='student-table-scroll';wrapper.tabIndex=0;wrapper.setAttribute('aria-label','Таблица учеников');
+ const table=document.createElement('table');table.className='student-table';const caption=trialElement('caption','Ученики и текущий денежный баланс');table.append(caption);
+ const head=document.createElement('thead'),heading=document.createElement('tr');for(const title of ['Ученик','Логин','Класс','Цена урока','Баланс','Статус','Действия']){const th=trialElement('th',title);th.scope='col';heading.append(th)}head.append(heading);table.append(head);
+ const body=document.createElement('tbody'),rub=value=>(Number(value)/100).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₽';
+ for(const row of rows){const tr=document.createElement('tr');const values=[row.name,row.username,row.school_grade??'—',rub(row.default_price_kopecks),rub(row.balance_kopecks),row.is_active?'Активен':'В архиве'];values.forEach((value,i)=>{const td=trialElement('td',value);if(i===3||i===4)td.className='student-money';if(i===4&&row.debt_kopecks>0){td.classList.add('student-debt');td.append(trialElement('span','Задолженность','student-debt-label'))}tr.append(td)});
+ const actions=document.createElement('td');actions.className='student-table-actions';const link=trialElement('a','Оплаты');link.href='finance.html?student_id='+encodeURIComponent(row.id);link.setAttribute('aria-label','Оплаты: '+row.name);actions.append(link);
+ const edit=trialElement('button','Редактировать');edit.type='button';edit.onclick=()=>editStudent(row);actions.append(edit);
+ const more=document.createElement('details'),summary=trialElement('summary','Ещё');more.append(summary);for(const [label,handler] of [['Сбросить пароль',()=>resetPassword(row)],[row.is_active?'Архивировать':'Восстановить',()=>toggleActive(row)]]){const b=trialElement('button',label);b.type='button';b.onclick=handler;more.append(b)}actions.append(more);tr.append(actions);body.append(tr)}
+ table.append(body);wrapper.append(table);if(!rows.length)wrapper.append(trialElement('p','Ученики не найдены. Измените поиск или фильтр.','muted'));return wrapper;
+}
+
 async function get(path) {
   const response = await fetch('/api/' + path);
   const result = await response.json();
@@ -44,43 +60,22 @@ async function load() {
   document.querySelectorAll('button').forEach(button => button.disabled = true);
   try {
     const params=new URLSearchParams({limit,offset});if(section==='trial-requests'){params.set('view',trialView);params.set('search',trialSearch);if(trialStatus)params.set('status',trialStatus)}
+    if(section==='students'){params.set('include_finance','true');params.set('search',studentSearch);params.set('view',studentView);params.set('sort',studentSort)}
     const result = await get(`admin/${section}?${params}`);
-    document.querySelector('#trial-controls').hidden=section!=='trial-requests';items.classList.toggle('trial-list',section==='trial-requests');
+    document.querySelector('#trial-controls').hidden=section!=='trial-requests';document.querySelector('#student-controls').hidden=section!=='students';items.classList.toggle('trial-list',section==='trial-requests');items.classList.toggle('student-list',section==='students');
     if(section==='trial-requests'){document.querySelector('#trial-active').textContent='В работе ('+result.active_total+')';document.querySelector('#trial-archive').textContent='Архив ('+result.archive_total+')';document.querySelector('#trial-new-count').textContent='Новых: '+result.counts.new;document.querySelector('#trial-active').setAttribute('aria-pressed',String(trialView==='active'));document.querySelector('#trial-archive').setAttribute('aria-pressed',String(trialView==='archive'));}
     document.querySelector('#dashboard').hidden = false;
     loadLessonSummary();
     document.querySelector('#create-student').hidden = section !== 'students';
     document.querySelector('#list-title').textContent = section === 'students' ? 'Зарегистрированные ученики' : 'Заявки на пробный урок';
     document.querySelector('#count').textContent = `Всего: ${result.total}. Показано: ${result.items.length}.`;
-    for(const row of result.items) {
-      if(section==='trial-requests'){items.append(renderTrialRequest(row));continue;}
-      const card = document.createElement('article'), title = document.createElement('h3'), fields = document.createElement('dl');
-      card.className = 'record'; title.textContent = row.name;
-      const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = section === 'students' ? `Ученик №${row.id}` : `Заявка №${row.id}`;
-      card.append(badge);
-      addField(fields,'Email',row.email);
-      if(section === 'students') {
-        addField(fields,'Логин',row.username);addField(fields,'Статус',row.is_active?'Активен':'В архиве');addField(fields,'Телефон',row.phone);addField(fields,'Класс',row.school_grade);addField(fields,'Цена занятия',(row.default_price_kopecks/100).toFixed(2)+' ₽');addField(fields,'Длительность',row.default_duration_minutes+' мин');
-      }
-      if(section === 'trial-requests') {
-        addField(fields,'Дата заявки',String(row.created_at).replace('T',' '));
-        addField(fields,'Телефон',row.phone); addField(fields,'Направления',row.courses);
-        addField(fields,'Комментарий',row.message); addField(fields,'Согласие',row.consent ? 'Получено' : 'Нет');
-      }
-      card.append(title,fields);
-      if(section === 'students') {
-        const actions=document.createElement('div');actions.className='student-actions';
-        for(const [label,handler] of [['Редактировать',()=>editStudent(row)],['Сбросить пароль',()=>resetPassword(row)],[row.is_active?'Архивировать':'Восстановить',()=>toggleActive(row)]]){const button=document.createElement('button');button.textContent=label;button.onclick=handler;actions.append(button);}
-        card.append(actions);
-      }
-      items.append(card);
-    }
+    if(section==='students')items.append(renderStudentTable(result.items));else for(const row of result.items)items.append(renderTrialRequest(row));
     status.textContent = result.items.length ? '' : 'Пока записей нет.';
     document.querySelectorAll('button').forEach(button => button.disabled = false);
     document.querySelector('#prev').disabled = offset === 0;
     document.querySelector('#next').disabled = offset + limit >= result.total;
     return true;
-  } catch(error) { status.textContent = error.message; document.querySelector('#dashboard').hidden = error.status===401||error.status===403;for(const id of ['requests-tab','students-tab','refresh','trial-active','trial-archive','trial-reset'])document.getElementById(id).disabled=false; }
+  } catch(error) { status.textContent = error.message; document.querySelector('#dashboard').hidden = error.status===401||error.status===403;for(const id of ['requests-tab','students-tab','refresh','trial-active','trial-archive','trial-reset','student-reset'])document.getElementById(id).disabled=false; }
   finally { busy = false; }
 }
 function choose(value) {
@@ -88,6 +83,7 @@ function choose(value) {
   section=value; offset=0;
   document.querySelector('#requests-tab').setAttribute('aria-pressed',String(section === 'trial-requests'));
   document.querySelector('#students-tab').setAttribute('aria-pressed',String(section === 'students'));
+  const location=new URL(window.location.href);location.searchParams.set('section',value);history.replaceState(null,'',location);
   load();
 }
 document.querySelector('#requests-tab').onclick=()=>choose('trial-requests');
@@ -95,6 +91,7 @@ document.querySelector('#students-tab').onclick=()=>choose('students');
 document.querySelector('#prev').onclick=()=>{offset=Math.max(0,offset-limit);load();};
 document.querySelector('#next').onclick=()=>{offset+=limit;load();};
 document.querySelector('#refresh').onclick=()=>load();
+if(new URLSearchParams(window.location.search).get('section')==='students'){section='students';document.querySelector('#students-tab').setAttribute('aria-pressed','true');document.querySelector('#requests-tab').setAttribute('aria-pressed','false')}
 load();
 
 document.querySelector('a[href="#students-tab"]').addEventListener('click', () => { if(!busy) choose('students'); });

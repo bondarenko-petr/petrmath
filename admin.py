@@ -25,14 +25,40 @@ def require_admin(request: Request, response: Response):
 
 
 @router.get('/students')
-def students(response: Response, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), user=Depends(require_admin)):
-    with database() as (cursor, p):
-        cursor.execute("SELECT COUNT(*) AS total FROM users WHERE role='student'")
-        total = cursor.fetchone()['total']
-        cursor.execute(f"SELECT u.id,u.name,u.email,u.username,u.role,u.is_active,u.must_change_password,COALESCE(s.phone,'') AS phone,s.school_grade,COALESCE(s.default_price_kopecks,0) AS default_price_kopecks,COALESCE(s.default_duration_minutes,60) AS default_duration_minutes FROM users u LEFT JOIN student_profiles s ON s.user_id=u.id WHERE u.role='student' ORDER BY u.id DESC LIMIT {p} OFFSET {p}", (limit, offset))
-        items = [dict(row) for row in cursor.fetchall()]
-    response.headers['Cache-Control'] = 'no-store'
-    return {'items': items, 'total': total, 'limit': limit, 'offset': offset}
+def students(response: Response, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+             search: str = Query('',max_length=200), view: Literal['all','active','debt','archive']='all',
+             sort: Literal['newest','name','balance_asc','balance_desc']='newest',
+             include_finance: bool=False, user=Depends(require_admin)):
+    with database() as (c,p):
+        if p=='?':
+            c.execute('BEGIN')
+        financial = include_finance or view=='debt' or sort in ('balance_asc','balance_desc')
+        fields = "u.id,u.name,u.email,u.username,u.role,u.is_active,u.must_change_password,COALESCE(s.phone,'') AS phone,s.school_grade,COALESCE(s.default_price_kopecks,0) AS default_price_kopecks,COALESCE(s.default_duration_minutes,60) AS default_duration_minutes"
+        joins = " FROM users u LEFT JOIN student_profiles s ON s.user_id=u.id"
+        if financial:
+            fields += ",CAST(COALESCE(paid.total,0) AS SIGNED)-CAST(COALESCE(spent.total,0) AS SIGNED) AS balance_kopecks"
+            joins += " LEFT JOIN (SELECT student_id,SUM(amount_kopecks) AS total FROM payments WHERE voided_at IS NULL GROUP BY student_id) paid ON paid.student_id=u.id LEFT JOIN (SELECT student_id,SUM(price_kopecks) AS total FROM lessons WHERE status='completed' GROUP BY student_id) spent ON spent.student_id=u.id"
+        source = " FROM (SELECT " + fields + joins + " WHERE u.role='student') student_list"
+        clauses=['1=1'];args=[]
+        if view=='active': clauses.append('is_active=1')
+        elif view=='archive': clauses.append('is_active=0')
+        elif view=='debt': clauses.append('balance_kopecks<0')
+        if search.strip():
+            pattern='%'+search.strip().replace('!','!!').replace('%','!%').replace('_','!_')+'%'
+            clauses.append(f"(name LIKE {p} ESCAPE '!' OR username LIKE {p} ESCAPE '!' OR email LIKE {p} ESCAPE '!')")
+            args.extend([pattern]*3)
+        where=' WHERE '+' AND '.join(clauses)
+        c.execute('SELECT COUNT(*) AS total'+source+where,tuple(args))
+        total=int(c.fetchone()['total'])
+        order={'newest':'id DESC','name':'name ASC,id ASC','balance_asc':'balance_kopecks ASC,id ASC','balance_desc':'balance_kopecks DESC,id ASC'}[sort]
+        c.execute('SELECT *'+source+where+' ORDER BY '+order+f' LIMIT {p} OFFSET {p}',(*args,limit,offset))
+        items=[dict(row) for row in c.fetchall()]
+        if financial:
+            for row in items:
+                row['balance_kopecks']=int(row['balance_kopecks'])
+                row['debt_kopecks']=max(-row['balance_kopecks'],0)
+    response.headers['Cache-Control']='no-store'
+    return {'items':items,'total':total,'limit':limit,'offset':offset}
 
 
 TrialStatus = Literal['new','contacting','trial_scheduled','enrolled','closed']
