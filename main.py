@@ -5,6 +5,7 @@ from database import save_request
 from accounts import router as accounts_router
 from admin import router as admin_router
 from lessons import router as lessons_router
+from finance import router as finance_router
 from pathlib import Path
 from typing import Literal
 
@@ -47,6 +48,7 @@ def create_trial_request(request: TrialRequest) -> dict[str, str]:
 app.include_router(accounts_router)
 app.include_router(admin_router)
 app.include_router(lessons_router)
+app.include_router(finance_router)
 
 
 @app.exception_handler(sqlite3.Error)

@@ -52,6 +52,8 @@ def database():
         connection.execute("CREATE TABLE IF NOT EXISTS lessons (id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL REFERENCES users(id), series_id INTEGER REFERENCES lesson_series(id), starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL, duration_minutes INTEGER NOT NULL, price_kopecks INTEGER NOT NULL, topic TEXT NOT NULL DEFAULT '', meeting_url TEXT NOT NULL DEFAULT '', timezone TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'scheduled', created_at INTEGER NOT NULL)")
         connection.execute('CREATE INDEX IF NOT EXISTS lessons_start ON lessons(starts_at)')
         connection.execute('CREATE INDEX IF NOT EXISTS lessons_student_start ON lessons(student_id,starts_at)')
+        connection.execute("CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, student_id INTEGER NOT NULL REFERENCES users(id), amount_kopecks INTEGER NOT NULL CHECK(amount_kopecks>0), lesson_count INTEGER NOT NULL CHECK(lesson_count>0), note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, created_by INTEGER NOT NULL REFERENCES users(id), voided_at INTEGER, voided_by INTEGER REFERENCES users(id), void_reason TEXT NOT NULL DEFAULT '')")
+        connection.execute('CREATE INDEX IF NOT EXISTS payments_student_created ON payments(student_id,created_at)')
         cursor = connection.cursor()
         placeholder = '?'
     else:
