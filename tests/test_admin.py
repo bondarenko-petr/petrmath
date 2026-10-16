@@ -32,3 +32,21 @@ class StudentManagementTests(support.AccountTests):
         self.assertEqual(self.client.get('/api/admin/students?limit=500').status_code,422)
         admin_id=self.client.get('/api/auth/me').json()['id']
         self.assertEqual(self.client.patch(f'/api/admin/students/{admin_id}/active',json={'is_active':False},headers=self.headers).status_code,404)
+
+    def test_edit_price_with_legacy_email_login(self):
+        support.seed_user('Админ','teacher','Teacher password!','admin')
+        self.post('login',{'username':'teacher','password':'Teacher password!'})
+        payload={'name':'Ученик','username':self.data['username'],'email':self.data['username'],
+                 'phone':'','school_grade':9,'default_price_kopecks':225050,'default_duration_minutes':60}
+        url=f'/api/admin/students/{self.id}'
+        response=self.client.put(url,json=payload,headers=self.headers)
+        self.assertEqual(response.status_code,200,response.text)
+        saved=next(s for s in self.client.get('/api/admin/students').json()['items'] if s['id']==self.id)
+        self.assertEqual(saved['default_price_kopecks'],225050)
+        self.assertEqual(saved['username'],self.data['username'])
+        # New accounts still require short logins; preserving a legacy login
+        # does not allow assigning arbitrary identifiers to another account.
+        self.assertEqual(self.client.post('/api/admin/students',json=payload,headers=self.headers).status_code,422)
+        self.assertEqual(self.client.put(url,json=payload|{'username':'invalid@new','default_price_kopecks':1},headers=self.headers).status_code,422)
+        saved=next(s for s in self.client.get('/api/admin/students').json()['items'] if s['id']==self.id)
+        self.assertEqual(saved['default_price_kopecks'],225050)

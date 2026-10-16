@@ -54,6 +54,9 @@ def database():
         connection.execute('CREATE INDEX IF NOT EXISTS lessons_student_start ON lessons(student_id,starts_at)')
         connection.execute("CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, student_id INTEGER NOT NULL REFERENCES users(id), amount_kopecks INTEGER NOT NULL CHECK(amount_kopecks>0), lesson_count INTEGER NOT NULL CHECK(lesson_count>0), note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, created_by INTEGER NOT NULL REFERENCES users(id), voided_at INTEGER, voided_by INTEGER REFERENCES users(id), void_reason TEXT NOT NULL DEFAULT '')")
         connection.execute('CREATE INDEX IF NOT EXISTS payments_student_created ON payments(student_id,created_at)')
+        connection.execute("CREATE TABLE IF NOT EXISTS trial_requests (id INTEGER PRIMARY KEY, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, name TEXT NOT NULL, email TEXT NOT NULL, phone TEXT NOT NULL, courses TEXT NOT NULL, message TEXT NOT NULL, consent INTEGER NOT NULL)")
+        connection.execute("CREATE TABLE IF NOT EXISTS trial_request_management (request_id INTEGER PRIMARY KEY REFERENCES trial_requests(id), status TEXT NOT NULL DEFAULT 'new', admin_note TEXT NOT NULL DEFAULT '', close_reason TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL, updated_by INTEGER NOT NULL REFERENCES users(id))")
+        connection.execute('CREATE INDEX IF NOT EXISTS trial_management_status ON trial_request_management(status,request_id)')
         cursor = connection.cursor()
         placeholder = '?'
     else:

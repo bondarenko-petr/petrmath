@@ -8,8 +8,9 @@ from accounts import verify, throttle
 import sqlite3
 import mysql.connector
 import time
+import re
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional
+from typing import Optional, Literal
 
 router = APIRouter(prefix='/api/admin', tags=['Administration'])
 
@@ -34,15 +35,77 @@ def students(response: Response, limit: int = Query(50, ge=1, le=100), offset: i
     return {'items': items, 'total': total, 'limit': limit, 'offset': offset}
 
 
+TrialStatus = Literal['new','contacting','trial_scheduled','enrolled','closed']
+CloseReason = Literal['','declined','no_response','duplicate','spam','other']
+
+
 @router.get('/trial-requests')
-def requests(response: Response, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), user=Depends(require_admin)):
-    with database() as (cursor, p):
-        cursor.execute('SELECT COUNT(*) AS total FROM trial_requests')
-        total = cursor.fetchone()['total']
-        cursor.execute(f'SELECT id,created_at,name,email,phone,courses,message,consent FROM trial_requests ORDER BY id DESC LIMIT {p} OFFSET {p}', (limit, offset))
-        items = [dict(row) for row in cursor.fetchall()]
-    response.headers['Cache-Control'] = 'no-store'
-    return {'items': items, 'total': total, 'limit': limit, 'offset': offset}
+def requests(response: Response, limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0),
+             view: Literal['active','archive'] = 'active', status: Optional[TrialStatus] = None,
+             search: str = Query('', max_length=200), user=Depends(require_admin)):
+    with database() as (c,p):
+        if p == '?':
+            c.execute('BEGIN')
+        source = " FROM trial_requests r LEFT JOIN trial_request_management m ON m.request_id=r.id"
+        state = "COALESCE(m.status,'new')"
+        c.execute("SELECT " + state + " AS status,COUNT(*) AS total" + source + " GROUP BY " + state)
+        counts = {key:0 for key in ['new','contacting','trial_scheduled','enrolled','closed']}
+        counts.update({row['status']:int(row['total']) for row in c.fetchall()})
+        condition = state + (" IN ('enrolled','closed')" if view == 'archive' else " NOT IN ('enrolled','closed')")
+        args = []
+        if status:
+            condition += f' AND {state}={p}'
+            args.append(status)
+        if search.strip():
+            pattern = '%' + search.strip().replace('!','!!').replace('%','!%').replace('_','!_') + '%'
+            condition += f" AND (r.name LIKE {p} ESCAPE '!' OR r.email LIKE {p} ESCAPE '!' OR r.phone LIKE {p} ESCAPE '!')"
+            args.extend([pattern]*3)
+        c.execute('SELECT COUNT(*) AS total'+source+' WHERE '+condition,tuple(args))
+        total = int(c.fetchone()['total'])
+        c.execute("SELECT r.*,COALESCE(m.status,'new') AS status,COALESCE(m.admin_note,'') AS admin_note,COALESCE(m.close_reason,'') AS close_reason,COALESCE(m.version,0) AS version,m.updated_at"+source+' WHERE '+condition+f' ORDER BY r.id DESC LIMIT {p} OFFSET {p}',(*args,limit,offset))
+        items = [dict(row) for row in c.fetchall()]
+    response.headers['Cache-Control']='no-store'
+    return {'items':items,'total':total,'limit':limit,'offset':offset,'counts':counts,
+            'active_total':sum(counts[k] for k in ['new','contacting','trial_scheduled']),
+            'archive_total':counts['enrolled']+counts['closed']}
+
+
+class TrialUpdate(BaseModel):
+    status: TrialStatus
+    admin_note: str = Field(default='', max_length=2000)
+    close_reason: CloseReason = ''
+    version: int = Field(ge=0, strict=True)
+
+    @field_validator('admin_note', mode='before')
+    @classmethod
+    def clean_note(cls,value):
+        return value.strip() if isinstance(value,str) else value
+
+
+@router.patch('/trial-requests/{request_id}')
+def update_trial(request_id: int, data: TrialUpdate, request:Request, response:Response, user=Depends(require_admin)):
+    guard(request)
+    if data.status=='closed' and not data.close_reason:
+        raise HTTPException(422,'Укажите причину закрытия заявки')
+    reason=data.close_reason if data.status=='closed' else ''
+    with database() as (c,p):
+        if p=='?':
+            c.execute('BEGIN IMMEDIATE')
+        c.execute(f'SELECT id FROM trial_requests WHERE id={p}' + (' FOR UPDATE' if p!='?' else ''),(request_id,))
+        if not c.fetchone():
+            raise HTTPException(404,'Заявка не найдена')
+        c.execute(f'SELECT version FROM trial_request_management WHERE request_id={p}',(request_id,))
+        old=c.fetchone()
+        current=int(old['version']) if old else 0
+        if current!=data.version:
+            raise HTTPException(409,'Заявка уже изменена в другом окне. Скопируйте заметку и обновите список перед повторным сохранением.')
+        values=(data.status,data.admin_note,reason,current+1,int(time.time()),user['id'],request_id)
+        if old:
+            c.execute(f'UPDATE trial_request_management SET status={p},admin_note={p},close_reason={p},version={p},updated_at={p},updated_by={p} WHERE request_id={p}',values)
+        else:
+            c.execute('INSERT INTO trial_request_management (status,admin_note,close_reason,version,updated_at,updated_by,request_id) VALUES ('+','.join([p]*7)+')',values)
+    response.headers['Cache-Control']='no-store'
+    return {'status':'saved','version':current+1}
 
 
 class StudentData(BaseModel):
@@ -65,15 +128,23 @@ class StudentData(BaseModel):
         return value.lower()
 
 
+class StudentEditData(StudentData):
+    # Legacy accounts used email as the login. Preserve existing identifiers;
+    # only newly assigned logins must satisfy the current format.
+    username: str = Field(min_length=1, max_length=254)
+
+
 def temporary_password():
     alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
     return ''.join(secrets.choice(alphabet) for _ in range(8))
 
 
 def student_exists(cursor, p, user_id):
-    cursor.execute(f"SELECT id FROM users WHERE id={p} AND role='student'", (user_id,))
-    if not cursor.fetchone():
+    cursor.execute(f"SELECT id,username FROM users WHERE id={p} AND role='student'", (user_id,))
+    row = cursor.fetchone()
+    if not row:
         raise HTTPException(404, 'Ученик не найден')
+    return dict(row)
 
 
 def write_student_profile(cursor, p, user_id, data):
@@ -101,11 +172,13 @@ def create_student(data: StudentData, request: Request, response: Response, user
 
 
 @router.put('/students/{user_id}')
-def edit_student(user_id: int, data: StudentData, request: Request, response: Response, user=Depends(require_admin)):
+def edit_student(user_id: int, data: StudentEditData, request: Request, response: Response, user=Depends(require_admin)):
     guard(request)
     try:
         with database() as (cursor,p):
-            student_exists(cursor,p,user_id)
+            existing = student_exists(cursor,p,user_id)
+            if data.username != existing['username'] and not re.fullmatch(r'[a-zA-Z0-9._-]{3,40}', data.username):
+                raise HTTPException(422, 'Новый логин: от 3 до 40 символов, латиница, цифры, точка, дефис или подчёркивание')
             cursor.execute(f"UPDATE users SET name={p},username={p},email={p} WHERE id={p} AND role='student'", (data.name,data.username,str(data.email).lower() if data.email else None,user_id))
             write_student_profile(cursor,p,user_id,data)
     except (sqlite3.IntegrityError,mysql.connector.IntegrityError):
