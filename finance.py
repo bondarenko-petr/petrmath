@@ -14,7 +14,7 @@ class PaymentInput(BaseModel):
     request_id: UUID
     student_id: int = Field(gt=0, strict=True)
     amount_kopecks: int = Field(gt=0, le=100000000, strict=True)
-    lesson_count: int = Field(gt=0, le=1000, strict=True)
+    lesson_count: int | None = Field(default=None, gt=0, le=1000, strict=True)
     note: str = Field(default='', max_length=300)
 
     @field_validator('note')
@@ -33,7 +33,7 @@ class VoidInput(BaseModel):
 
 
 def student(cursor, p, student_id):
-    cursor.execute(f"SELECT id,name,is_active FROM users WHERE id={p} AND role='student'", (student_id,))
+    cursor.execute(f"SELECT u.id,u.name,u.is_active,COALESCE(s.default_price_kopecks,0) AS current_price_kopecks FROM users u LEFT JOIN student_profiles s ON s.user_id=u.id WHERE u.id={p} AND u.role='student'", (student_id,))
     row = cursor.fetchone()
     if not row:
         raise HTTPException(404, 'Ученик не найден')
@@ -49,10 +49,16 @@ def balance(cursor, p, student_id):
     cursor.execute(f'''SELECT COUNT(*) AS completed_lessons, COALESCE(SUM(price_kopecks),0) AS spent_kopecks
         FROM lessons WHERE student_id={p} AND status='completed' ''', (student_id,))
     spent = dict(cursor.fetchone())
-    # MySQL SUM returns Decimal, SQLite returns int. Money always stays in kopecks.
+    # Only money is authoritative. Package quantities are historical metadata,
+    # not a second entitlement or a guarantee when lesson prices differ.
+    cash = int(paid['paid_kopecks']) - int(spent['spent_kopecks'])
+    rate = int(owner['current_price_kopecks'])
+    available = max(cash,0) // rate if rate>0 else None
     return owner | {k:int(v) for k,v in (paid | spent).items()} | {
-        'balance_kopecks': int(paid['paid_kopecks']) - int(spent['spent_kopecks']),
-        'remaining_lessons': int(paid['paid_lessons']) - int(spent['completed_lessons'])}
+        'current_price_kopecks':rate, 'balance_kopecks':cash,
+        'available_lessons':available, 'remaining_lessons':available,
+        'remainder_kopecks':max(cash,0) % rate if rate>0 else None,
+        'debt_kopecks':max(-cash,0)}
 
 
 @router.get('/balance')

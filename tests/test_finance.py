@@ -13,6 +13,8 @@ class FinanceTests(unittest.TestCase):
         support.AccountTests.setUp(self)
         self.admin_id=support.seed_user('Преподаватель','teacher','Teacher password!','admin')
         self.client.post('/api/auth/login',json={'username':'teacher','password':'Teacher password!'},headers=self.headers)
+        with database() as (c,p):
+            c.execute('INSERT INTO student_profiles (user_id,default_price_kopecks) VALUES (?,200000)',(self.id,))
         self.payload={'request_id':str(uuid4()),'student_id':self.id,'amount_kopecks':800000,'lesson_count':4,'note':'Пакет'}
 
     def tearDown(self):
@@ -49,13 +51,13 @@ class FinanceTests(unittest.TestCase):
     def test_existing_lessons_and_independent_balances(self):
         self.historic_lesson(price=123456,status='completed')
         before=self.summary().json()['student']
-        self.assertEqual(before['remaining_lessons'],-1)
+        self.assertEqual(before['remaining_lessons'],0)
         self.assertEqual(before['balance_kopecks'],-123456)
         self.pay(self.payload|{'amount_kopecks':500001,'lesson_count':2})
         with database() as (c,p):
-            c.execute('INSERT INTO student_profiles (user_id,default_price_kopecks) VALUES (?,999999)',(self.id,))
+            c.execute('UPDATE student_profiles SET default_price_kopecks=999999 WHERE user_id=?',(self.id,))
         data=self.summary().json()['student']
-        self.assertEqual(data['remaining_lessons'],1)
+        self.assertEqual(data['remaining_lessons'],0)
         self.assertEqual(data['balance_kopecks'],376545)
         self.assertEqual(data['spent_kopecks'],123456)
 
@@ -87,7 +89,7 @@ class FinanceTests(unittest.TestCase):
             self.assertEqual(self.client.post(url,json={'reason':'Ошибка ввода'},headers=self.headers).status_code,200)
         data=self.summary().json()
         self.assertEqual(data['student']['balance_kopecks'],-200000)
-        self.assertEqual(data['student']['remaining_lessons'],-1)
+        self.assertEqual(data['student']['remaining_lessons'],0)
         payment_row=next(r for r in data['items'] if r['kind']=='payment')
         self.assertTrue(payment_row['voided_at'])
         self.assertEqual(payment_row['void_reason'],'Ошибка ввода')
@@ -123,3 +125,63 @@ class FinanceTests(unittest.TestCase):
         self.assertNotEqual(first['items'][0]['kind'],second['items'][0]['kind'])
         self.assertEqual(self.summary(limit=101).status_code,422)
         self.assertEqual(self.client.get('/api/finance/balance').status_code,422)
+
+    def test_money_only_topup_and_remainder(self):
+        with database() as (c,p):
+            c.execute('UPDATE student_profiles SET default_price_kopecks=150000 WHERE user_id=?',(self.id,))
+        payload=self.payload|{'amount_kopecks':500000}
+        del payload['lesson_count']
+        self.assertEqual(self.pay(payload).status_code,201)
+        data=self.summary().json()
+        self.assertEqual(data['student']['balance_kopecks'],500000)
+        self.assertEqual(data['student']['available_lessons'],3)
+        self.assertEqual(data['student']['remainder_kopecks'],50000)
+        self.assertIsNone(data['items'][0]['lesson_count'])
+        self.assertEqual(self.pay(payload).status_code,200)
+
+    def test_partial_payment_debt_and_discount_estimate(self):
+        self.historic_lesson(status='completed')
+        self.pay(self.payload|{'lesson_count':None,'amount_kopecks':50000})
+        data=self.summary().json()['student']
+        self.assertEqual(data['debt_kopecks'],150000)
+        self.assertEqual(data['available_lessons'],0)
+        self.assertEqual(data['remainder_kopecks'],0)
+        self.pay(self.payload|{'request_id':str(uuid4()),'amount_kopecks':600000,'lesson_count':4})
+        data=self.summary().json()['student']
+        self.assertEqual(data['balance_kopecks'],450000)
+        self.assertEqual(data['available_lessons'],2)
+        self.assertEqual(data['remainder_kopecks'],50000)
+
+    def test_rate_change_and_zero_rate_do_not_rewrite_money(self):
+        self.pay()
+        with database() as (c,p):
+            c.execute('UPDATE student_profiles SET default_price_kopecks=300000 WHERE user_id=?',(self.id,))
+        data=self.summary().json()['student']
+        self.assertEqual(data['available_lessons'],2)
+        self.assertEqual(data['balance_kopecks'],800000)
+        with database() as (c,p):
+            c.execute('UPDATE student_profiles SET default_price_kopecks=0 WHERE user_id=?',(self.id,))
+        data=self.summary().json()['student']
+        self.assertIsNone(data['available_lessons'])
+        self.assertIsNone(data['remainder_kopecks'])
+        self.assertEqual(data['balance_kopecks'],800000)
+
+    def test_sqlite_upgrade_preserves_existing_payment_and_audit(self):
+        from payment_schema import PAYMENTS_SCHEMA
+        with database() as (c,p):
+            c.execute('DROP TABLE payments')
+            c.execute(PAYMENTS_SCHEMA.replace('lesson_count INTEGER CHECK','lesson_count INTEGER NOT NULL CHECK'))
+            c.execute('INSERT INTO payments (id,request_id,student_id,amount_kopecks,lesson_count,note,created_at,created_by,voided_at,voided_by,void_reason) VALUES (42,?,?,?,?,?,?,?,?,?,?)',
+                (str(uuid4()),self.id,800000,4,'Прежняя оплата',1000,self.admin_id,2000,self.admin_id,'Ошибка'))
+        # The next connection upgrades the old NOT NULL column transactionally.
+        with database() as (c,p):
+            c.execute('SELECT * FROM payments WHERE id=42')
+            row=dict(c.fetchone())
+            self.assertEqual(row['amount_kopecks'],800000)
+            self.assertEqual(row['lesson_count'],4)
+            self.assertEqual(row['voided_by'],self.admin_id)
+            self.assertEqual(row['void_reason'],'Ошибка')
+            c.execute('PRAGMA table_info(payments)')
+            self.assertFalse(next(r for r in c.fetchall() if r['name']=='lesson_count')['notnull'])
+        self.assertEqual(self.pay(self.payload|{'lesson_count':None}).status_code,201)
+        self.assertEqual(self.summary().json()['student']['balance_kopecks'],800000)
