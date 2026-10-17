@@ -37,3 +37,5 @@
 #student-range-control{display:grid;gap:6px;font-size:14px;min-width:260px}#student-range-control[hidden]{display:none}
 
 .calendar-range-options{display:flex;flex-wrap:wrap;gap:8px 20px;border:0;padding:0;margin:16px 0;min-width:0}.calendar-range-options legend{font-size:14px;margin-bottom:6px}.calendar-range-options label{display:flex;align-items:center;gap:8px;min-height:44px;font-size:14px;cursor:pointer}.calendar-range-options input[type=radio]{width:18px;height:18px;margin:0;accent-color:#6410ed}.schedule-main .calendar-range-options input[type=radio]{width:18px;min-height:0;padding:0}#student-range-control.calendar-range-options{display:flex;min-width:0}#student-range-control[hidden]{display:none}
+
+.calendar-range-options[hidden]{display:none!important}

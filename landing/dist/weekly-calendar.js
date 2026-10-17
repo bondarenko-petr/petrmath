@@ -21,6 +21,11 @@ const WeeklyCalendar=(()=>{
   if(now.day>=weekStart&&now.day<plus(weekStart,7)){start=Math.min(start,now.minute);end=Math.max(end,now.minute)}
   return {startMinute:Math.max(0,Math.floor((start-60)/SLOT)*SLOT),endMinute:Math.min(1440,Math.ceil((end+60)/SLOT)*SLOT)};
  }
+ function adminWindow(rows,weekStart,timezone,value=new Date()){
+  const now=local(value,timezone);let startMinute=studentRange('current',timezone,value),lastEnd=now.minute;
+  for(let i=0;i<7;i++)for(const event of segments(rows,plus(weekStart,i),timezone)){startMinute=Math.min(startMinute,Math.max(0,Math.floor((event.start-60)/SLOT)*SLOT));lastEnd=Math.max(lastEnd,event.end)}
+  return {startMinute,endMinute:Math.min(1440,Math.ceil((lastEnd+120)/SLOT)*SLOT)};
+ }
  function selection(day,anchor,current,timezone){const start=Math.min(anchor,current),end=Math.max(anchor,current)+SLOT;
   for(let m=start;m<end;m+=SLOT)if(instants(day,m,timezone).length!==1)return null;
   const from=instants(day,start,timezone),to=instants(day,end,timezone);if(from.length!==1||to.length!==1)return null;
@@ -52,5 +57,5 @@ const WeeklyCalendar=(()=>{
  for(const e of lanes(segments(rows,day,timezone).filter(e=>e.end>rangeStart&&e.start<rangeEnd).map(e=>({...e,start:Math.max(e.start,rangeStart),visualEnd:Math.min(e.visualEnd,rangeEnd),continued:e.continued||e.start<rangeStart})))){const row=e.row,start=local(row.starts_at,timezone),end=local(row.ends_at,timezone),status={scheduled:'Запланировано',completed:'Проведено',cancelled:'Отменено'}[row.status]||row.status;const button=node('button',undefined,'calendar-event '+row.status);button.type='button';button.style.top=((e.start-rangeStart)*MINUTE)+'px';button.style.height=Math.max(1,(e.visualEnd-e.start)*MINUTE-2)+'px';button.style.left='calc('+(e.lane*100/e.lanes)+'% + 2px)';button.style.width='calc('+(100/e.lanes)+'% - 4px)';const period=(e.continued?'Продолжение · ':'')+start.time+'–'+end.time;button.append(node('strong',readOnly?(row.topic||'Математика'):(row.student_name||'Занятие')),node('span',period),node('span',row.topic||status));const additional=secondaryZone?local(row.starts_at,secondaryZone):null;button.title=[row.student_name,period,row.topic,status,additional?secondaryZone+': '+additional.day+' '+additional.time:null,row.student_timezone?'У ученика ('+row.student_timezone+'): '+local(row.starts_at,row.student_timezone).day+' '+local(row.starts_at,row.student_timezone).time:null].filter(Boolean).join(' · ');button.setAttribute('aria-label',button.title);button.onclick=()=>onOpen(row);column.append(button)}week.append(column)}root.append(week);
  const marker=node('div',undefined,'calendar-now');marker.setAttribute('aria-hidden','true');const update=()=>{const current=local(new Date(),timezone),target=columns.find(c=>c.day===current.day);if(target&&current.minute>=rangeStart&&current.minute<rangeEnd){marker.style.top=((current.minute-rangeStart)*MINUTE)+'px';target.column.append(marker)}else marker.remove()};update();const timer=setInterval(update,60000);
  root.scrollTop=initialized&&!rangeChanged?savedTop:(options.startMinute!==undefined?0:8*HOUR);return ()=>{clearInterval(timer);clearSelection();document.removeEventListener('keydown',escape)}}
- return {local,plus,instants,secondaryHours,studentRange,studentWindow,selection,segments,lanes,render};
+ return {local,plus,instants,secondaryHours,studentRange,studentWindow,adminWindow,selection,segments,lanes,render};
 })();
