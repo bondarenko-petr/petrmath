@@ -144,3 +144,31 @@ class LessonTests(unittest.TestCase):
         self.assertEqual(response.status_code,201,response.text)
         rows=self.client.get('/api/admin/students').json()['items']
         self.assertEqual(next(r for r in rows if r['id']==response.json()['id'])['timezone'],'Asia/Vladivostok')
+
+    def test_admin_berlin_display_preserves_student_fallback_and_lesson(self):
+        from unittest.mock import patch
+        with patch.dict('os.environ',{'ADMIN_TIMEZONE':'Europe/Berlin','LESSON_TIMEZONE':'Europe/Moscow'}):
+            settings=self.client.get('/api/lessons/settings').json()
+            self.assertEqual(settings['timezone'],'Europe/Berlin')
+            self.assertEqual(settings['student_default_timezone'],'Europe/Moscow')
+            result=self.create(self.lesson|{'starts_at':'2027-01-04T23:30:00Z'})
+            self.assertEqual(result.status_code,201,result.text)
+            self.assertEqual(self.client.get('/api/lessons?from_date=2027-01-05&to_date=2027-01-06').json()['total'],1)
+            self.assertEqual(self.client.get('/api/lessons/summary').json()['timezone'],'Europe/Berlin')
+            self.post('logout',{});self.post('login',self.data)
+            self.assertEqual(self.client.get('/api/lessons/settings').json()['timezone'],'Europe/Moscow')
+            self.assertEqual(self.client.get('/api/lessons').json()['items'][0]['starts_at'],'2027-01-04T23:30:00+00:00')
+
+    def test_admin_display_timezone_filters_without_changing_student_settings(self):
+        response=self.create(self.lesson|{'starts_at':'2027-01-04T22:30:00Z'})
+        self.assertEqual(response.status_code,201,response.text)
+        params={'from_date':'2027-01-05','to_date':'2027-01-06','display_timezone':'Europe/Moscow'}
+        self.assertEqual(self.client.get('/api/lessons',params=params).json()['total'],1)
+        params['display_timezone']='Europe/Berlin'
+        self.assertEqual(self.client.get('/api/lessons',params=params).json()['total'],0)
+        self.assertEqual(self.client.get('/api/lessons?display_timezone=Bad/Zone').status_code,422)
+        self.post('logout',{});self.post('login',self.data)
+        # A student cannot override the profile's timezone with this admin parameter.
+        self.assertEqual(self.client.get('/api/lessons',params=params).json()['total'],1)
+        row=self.client.get('/api/lessons').json()['items'][0]
+        self.assertEqual(row['starts_at'],'2027-01-04T22:30:00+00:00')

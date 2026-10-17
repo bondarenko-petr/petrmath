@@ -147,18 +147,20 @@ def student_defaults(cursor, p, student_id):
 
 @router.get('/settings')
 def settings(user=Depends(member)):
-    name = os.environ.get('LESSON_TIMEZONE', 'Europe/Moscow')
+    default_zone = os.environ.get('LESSON_TIMEZONE', 'Europe/Moscow')
+    name = os.environ.get('ADMIN_TIMEZONE', 'Europe/Berlin') if user['role'] == 'admin' else default_zone
     if user['role'] == 'student':
         with database() as (c,p):
             name = student_zone(c,p,user['id'])
     zone(name)
-    return {'timezone': name, 'role': user['role'], 'today': datetime.now(zone(name)).date().isoformat()}
+    return {'timezone': name, 'student_default_timezone': default_zone, 'role': user['role'], 'today': datetime.now(zone(name)).date().isoformat()}
 
 
 @router.get('')
 def list_lessons(response: Response, from_ts: int = Query(0, ge=0), to_ts: int | None = Query(None, ge=0),
-                 from_date: date | None = None, to_date: date | None = None, student_id: int | None = Query(None, gt=0), limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), overlap: bool=False, user=Depends(member)):
-    tz = settings(user)['timezone']
+                 from_date: date | None = None, to_date: date | None = None, student_id: int | None = Query(None, gt=0), limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), overlap: bool=False, display_timezone: str | None = Query(None,max_length=100), user=Depends(member)):
+    tz = display_timezone if display_timezone and user['role']=='admin' else settings(user)['timezone']
+    zone(tz)
     if from_date:
         from_ts = timestamp(datetime.combine(from_date, datetime.min.time()), tz)
     if to_date:
