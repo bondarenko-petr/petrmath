@@ -152,3 +152,19 @@ test('student ranges default to 08:00 or use the pupil timezone and clamp at mid
  assert.equal(calendar.studentRange('current','Europe/Berlin','2027-01-04T23:30:00Z'),0);
  assert.equal(calendar.studentRange('current','UTC','2027-01-04T23:59:00Z'),1365);
 });
+
+test('automatic range surrounds weekly lessons and includes now only for the current week',()=>{
+ const rows=[lesson(1,'2099-01-05T15:00:00Z','2099-01-05T15:45:00Z'),lesson(2,'2099-01-06T19:00:00Z','2099-01-06T19:45:00Z')];
+ const future=calendar.studentWindow('auto',rows,'2099-01-05','UTC','2098-12-01T09:00:00Z');
+ assert.equal(future.startMinute,840);assert.equal(future.endMinute,1245);
+ const current=calendar.studentWindow('auto',rows,'2099-01-05','UTC','2099-01-05T09:10:00Z');
+ assert.equal(current.startMinute,480);assert.equal(current.endMinute,1245);
+ const late=calendar.studentWindow('auto',rows,'2099-01-05','UTC','2099-01-05T23:50:00Z');assert.equal(late.endMinute,1440);
+ const empty=calendar.studentWindow('auto',[],'2099-01-05','Europe/Moscow','2099-01-05T09:10:00Z');assert.equal(empty.startMinute,660);assert.equal(empty.endMinute,1440);
+ const midnight=calendar.studentWindow('auto',[lesson(3,'2099-01-05T23:30:00Z','2099-01-06T00:15:00Z')],'2099-01-05','UTC','2098-12-01T09:00:00Z');assert.equal(midnight.startMinute,0);assert.equal(midnight.endMinute,1440);
+});
+test('bounded calendar clips the end of lessons and excludes later events',()=>{
+ const rows=[lesson(1,'2099-01-05T10:00:00Z','2099-01-05T12:00:00Z'),lesson(2,'2099-01-05T13:00:00Z','2099-01-05T14:00:00Z')];
+ const {day,dispose}=renderedCalendar('2099-01-05','',{startMinute:780,endMinute:840,readOnly:true},rows);
+ assert.equal(day.style.height,'64px');const events=day.children.filter(n=>n.className.startsWith('calendar-event'));assert.equal(events.length,1);assert.equal(events[0].style.height,'62px');dispose();
+});

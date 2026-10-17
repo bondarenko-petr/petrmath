@@ -1,7 +1,7 @@
 (()=>{
 const host=document.querySelector('[data-schedule-root]')||document;
 const $=s=>host.querySelector(s), form=$('#lesson-form'), filters=$('#filters');
-let listGeneration=0,showFullDay=false,studentRangeMode='current';
+let listGeneration=0,showFullDay=false,studentRangeMode='auto';
 try{if(localStorage.getItem('krug-pi-student-calendar-range')==='fixed')studentRangeMode='fixed'}catch{}
 let config, students=[],editing=null,offset=0,weekStart,busy=false,calendarGeneration=0,calendarCleanup=null,calendarDuration=null,secondaryZone='Europe/Berlin';
 const states={scheduled:'Запланировано',completed:'Проведено',cancelled:'Отменено'};
@@ -37,9 +37,9 @@ async function calendar(){
  if(calendarCleanup){calendarCleanup();calendarCleanup=null}
  $('#selected-lesson').hidden=true;
 
- const startMinute=config.role==='student'?WeeklyCalendar.studentRange(studentRangeMode,config.timezone):showFullDay?0:Math.max(0,Math.floor((WeeklyCalendar.local(new Date(),config.timezone).minute-60)/15)*15);
- $('#day-range').hidden=config.role==='student';$('#day-range').textContent=showFullDay?'Вернуть текущий диапазон':'Показать весь день';$('#range-label').textContent='Диапазон: '+String(Math.floor(startMinute/60)).padStart(2,'0')+':'+String(startMinute%60).padStart(2,'0')+'–24:00 · '+config.timezone;
- calendarCleanup=WeeklyCalendar.render(root,rows,{startMinute,weekStart:requestedWeek,timezone:config.timezone,secondaryZone:config.role==='student'?'':secondaryZone,readOnly:config.role==='student',onCreate:createFromCalendar,onOpen:showCalendarLesson,onInvalid:message=>$('#status').textContent=message});
+ const {startMinute,endMinute}=config.role==='student'?WeeklyCalendar.studentWindow(studentRangeMode,rows,requestedWeek,config.timezone):{startMinute:showFullDay?0:Math.max(0,Math.floor((WeeklyCalendar.local(new Date(),config.timezone).minute-60)/15)*15),endMinute:1440};
+ $('#day-range').hidden=config.role==='student';$('#day-range').textContent=showFullDay?'Вернуть текущий диапазон':'Показать весь день';$('#range-label').textContent='Диапазон: '+String(Math.floor(startMinute/60)).padStart(2,'0')+':'+String(startMinute%60).padStart(2,'0')+'–'+String(Math.floor(endMinute/60)).padStart(2,'0')+':'+String(endMinute%60).padStart(2,'0')+' · '+config.timezone;
+ calendarCleanup=WeeklyCalendar.render(root,rows,{startMinute,endMinute,weekStart:requestedWeek,timezone:config.timezone,secondaryZone:config.role==='student'?'':secondaryZone,readOnly:config.role==='student',onCreate:createFromCalendar,onOpen:showCalendarLesson,onInvalid:message=>$('#status').textContent=message});
  }catch(e){if(generation===calendarGeneration){if(calendarCleanup)calendarCleanup();calendarCleanup=null;root.replaceChildren(text('p','Не удалось загрузить календарь. Нажмите «Обновить».'))}throw e}
  finally{if(generation===calendarGeneration){root.inert=false;root.setAttribute('aria-busy','false')}}
 }
