@@ -138,7 +138,7 @@ def check_conflicts(cursor, p, records, excluded=()):
 
 
 def student_defaults(cursor, p, student_id):
-    cursor.execute(f"SELECT u.is_active,COALESCE(s.default_duration_minutes,60) AS duration,COALESCE(s.default_price_kopecks,0) AS price FROM users u LEFT JOIN student_profiles s ON s.user_id=u.id WHERE u.id={p} AND u.role='student'", (student_id,))
+    cursor.execute(f"SELECT u.is_active,COALESCE(s.default_duration_minutes,45) AS duration,COALESCE(s.default_price_kopecks,0) AS price FROM users u LEFT JOIN student_profiles s ON s.user_id=u.id WHERE u.id={p} AND u.role='student'", (student_id,))
     row = cursor.fetchone()
     if not row or not row['is_active']:
         raise HTTPException(422, 'Выберите активного ученика')

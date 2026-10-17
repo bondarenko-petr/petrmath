@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS student_profiles (
   school_grade TINYINT UNSIGNED NULL,
   timezone VARCHAR(100) NULL,
   default_price_kopecks BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  default_duration_minutes INT UNSIGNED NOT NULL DEFAULT 60,
+  default_duration_minutes INT UNSIGNED NOT NULL DEFAULT 45,
   FOREIGN KEY (user_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 INSERT IGNORE INTO student_profiles (user_id) SELECT id FROM users WHERE role='student';

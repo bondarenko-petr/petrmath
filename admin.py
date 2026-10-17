@@ -33,7 +33,7 @@ def students(response: Response, limit: int = Query(50, ge=1, le=100), offset: i
         if p=='?':
             c.execute('BEGIN')
         financial = include_finance or view=='debt' or sort in ('balance_asc','balance_desc')
-        fields = "u.id,u.name,u.email,u.username,u.role,u.is_active,u.must_change_password,COALESCE(s.phone,'') AS phone,s.school_grade,s.timezone,COALESCE(s.default_price_kopecks,0) AS default_price_kopecks,COALESCE(s.default_duration_minutes,60) AS default_duration_minutes"
+        fields = "u.id,u.name,u.email,u.username,u.role,u.is_active,u.must_change_password,COALESCE(s.phone,'') AS phone,s.school_grade,s.timezone,COALESCE(s.default_price_kopecks,0) AS default_price_kopecks,COALESCE(s.default_duration_minutes,45) AS default_duration_minutes"
         joins = " FROM users u LEFT JOIN student_profiles s ON s.user_id=u.id"
         if financial:
             fields += ",CAST(COALESCE(paid.total,0) AS SIGNED)-CAST(COALESCE(spent.total,0) AS SIGNED) AS balance_kopecks"
@@ -149,7 +149,7 @@ class StudentData(BaseModel):
     phone: str = Field(default='', max_length=40)
     school_grade: Optional[int] = Field(default=None, ge=1, le=11)
     default_price_kopecks: int = Field(ge=0, le=100000000, strict=True)
-    default_duration_minutes: int = Field(ge=1, le=1440, strict=True)
+    default_duration_minutes: int = Field(default=45, ge=1, le=1440, strict=True)
 
     @field_validator('name', 'phone', mode='before')
     @classmethod

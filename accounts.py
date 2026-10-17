@@ -46,7 +46,7 @@ def database():
             connection.commit()
         connection.execute('PRAGMA foreign_keys=ON')
         connection.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'student', username TEXT NOT NULL UNIQUE COLLATE NOCASE, must_change_password INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL DEFAULT 0, password_changed_at INTEGER)")
-        connection.execute("CREATE TABLE IF NOT EXISTS student_profiles (user_id INTEGER PRIMARY KEY REFERENCES users(id), phone TEXT NOT NULL DEFAULT '', school_grade INTEGER, default_price_kopecks INTEGER NOT NULL DEFAULT 0, default_duration_minutes INTEGER NOT NULL DEFAULT 60)")
+        connection.execute("CREATE TABLE IF NOT EXISTS student_profiles (user_id INTEGER PRIMARY KEY REFERENCES users(id), phone TEXT NOT NULL DEFAULT '', school_grade INTEGER, default_price_kopecks INTEGER NOT NULL DEFAULT 0, default_duration_minutes INTEGER NOT NULL DEFAULT 45)")
         if 'timezone' not in {row[1] for row in connection.execute('PRAGMA table_info(student_profiles)')}:
             connection.execute('ALTER TABLE student_profiles ADD COLUMN timezone TEXT')
         connection.execute('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL)')
