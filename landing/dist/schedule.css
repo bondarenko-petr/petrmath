@@ -24,3 +24,12 @@
 #primary-zone-control{font-size:14px;min-width:180px;margin-left:auto}#primary-zone-control select{margin:4px 0 0;min-height:40px;font-size:14px}#secondary-zone-control{margin-left:0}@media(max-width:650px){#primary-zone-control{width:100%;margin-left:0}}
 
 .time-day{background-image:repeating-linear-gradient(to bottom,transparent 0,transparent 31px,#f1ecf7 31px,#f1ecf7 32px,transparent 32px,transparent 63px,#dfd7e9 63px,#dfd7e9 64px),repeating-linear-gradient(to bottom,transparent 0,transparent 15px,#f7f4fa 15px,#f7f4fa 16px)}
+
+/* Keep action buttons and both timezone fields on one baseline. */
+.calendar-controls{display:grid;grid-template-columns:max-content max-content minmax(180px,1fr) minmax(180px,1fr);gap:12px;align-items:end;margin:20px 0 16px}
+.calendar-controls #primary-zone-control,.calendar-controls #secondary-zone-control{display:flex;flex-direction:column;gap:6px;min-width:0;width:100%;margin:0;font-size:13px;line-height:18px}
+.calendar-controls #primary-zone-control select,.calendar-controls #secondary-zone-control select{height:48px;min-height:48px;margin:0;font-size:14px;line-height:20px}
+.calendar-controls>button{height:48px;box-sizing:border-box;margin:0;white-space:nowrap}
+.calendar-controls>[hidden]{display:none!important}
+@media(max-width:850px){.calendar-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.calendar-controls>button{width:100%}}
+@media(max-width:480px){.calendar-controls #primary-zone-control,.calendar-controls #secondary-zone-control{grid-column:1/-1}}
