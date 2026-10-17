@@ -22,3 +22,5 @@
 .timezone-change-heading{display:block;color:#b42332;font-size:11px;line-height:1.25;margin-top:4px}.timezone-correction{position:absolute;left:3px;right:3px;height:20px;box-sizing:border-box;z-index:1;pointer-events:none;background:#fff0f1;border-top:1px solid #e8a4ac;color:#b42332;font-size:11px;line-height:18px;padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.time-corner{overflow-wrap:normal}
 
 #primary-zone-control{font-size:14px;min-width:180px;margin-left:auto}#primary-zone-control select{margin:4px 0 0;min-height:40px;font-size:14px}#secondary-zone-control{margin-left:0}@media(max-width:650px){#primary-zone-control{width:100%;margin-left:0}}
+
+.time-day{background-image:repeating-linear-gradient(to bottom,transparent 0,transparent 31px,#f1ecf7 31px,#f1ecf7 32px,transparent 32px,transparent 63px,#dfd7e9 63px,#dfd7e9 64px),repeating-linear-gradient(to bottom,transparent 0,transparent 15px,#f7f4fa 15px,#f7f4fa 16px)}

@@ -55,13 +55,13 @@ test('marks secondary dates and rejects missing or ambiguous primary wall time',
  assert.equal(calendar.instants('2027-10-31',150,'Europe/Berlin').length,2);
  assert.equal(calendar.selection('2027-03-28',90,180,'Europe/Berlin'),null);
 });
-test('selected intervals include the last half-hour cell and support reverse drag',()=>{
- const forward=calendar.selection('2027-01-04',900,960,'Europe/Moscow');
- assert.equal(forward.value,'2027-01-04T15:00');assert.equal(forward.duration,90);
- const reverse=calendar.selection('2027-01-04',960,900,'Europe/Moscow');
- assert.equal(reverse.value,forward.value);assert.equal(reverse.duration,90);
- const midnight=calendar.selection('2027-01-04',1410,1410,'Europe/Moscow');
- assert.equal(midnight.duration,30);assert.equal(midnight.end,1440);
+test('selected intervals use 15-minute cells and support reverse drag',()=>{
+ const forward=calendar.selection('2027-01-04',900,930,'Europe/Moscow');
+ assert.equal(forward.value,'2027-01-04T15:00');assert.equal(forward.duration,45);
+ const reverse=calendar.selection('2027-01-04',930,900,'Europe/Moscow');
+ assert.equal(reverse.value,forward.value);assert.equal(reverse.duration,45);
+ const midnight=calendar.selection('2027-01-04',1425,1425,'Europe/Moscow');
+ assert.equal(midnight.duration,15);assert.equal(midnight.end,1440);
 });
 
 class FakeElement{
@@ -89,12 +89,13 @@ test('opens exactly at 08:00 and preserves manual scroll on rerender',()=>{
 });
 test('drag stages one interval and suppresses duplicate click; touch keeps native tap',()=>{
  const {day,calls,dispose}=renderedCalendar(),slots=day.children.filter(n=>n.className==='time-slot');
+ assert.equal(slots.length,96);assert.equal(slots[61].attrs['aria-label'],'Создать урок 2099-01-05 в 15:15');
  const down={pointerType:'mouse',button:0,pointerId:1,clientY:960,preventDefault:()=>{}};
- slots[30].onpointerdown(down);day.onpointermove({pointerId:1,clientY:1024});
+ slots[60].onpointerdown(down);day.onpointermove({pointerId:1,clientY:992});
  assert.equal(calls.length,0);
- day.onpointerup({pointerId:1});assert.equal(calls.length,1);assert.equal(calls[0][1],90);
- slots[30].onclick({detail:1});assert.equal(calls.length,1);
- slots[32].onclick({detail:0});assert.equal(calls.length,2);assert.equal(calls[1][1],undefined);dispose();
+ day.onpointerup({pointerId:1});assert.equal(calls.length,1);assert.equal(calls[0][1],45);
+ slots[60].onclick({detail:1});assert.equal(calls.length,1);
+ slots[64].onclick({detail:0});assert.equal(calls.length,2);assert.equal(calls[1][1],undefined);dispose();
 });
 
 test('DST corrections show exact Sunday time only after the autumn transition',()=>{
