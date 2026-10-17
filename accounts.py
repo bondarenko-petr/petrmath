@@ -57,6 +57,8 @@ def database():
         connection.execute("CREATE TABLE IF NOT EXISTS trial_requests (id INTEGER PRIMARY KEY, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, name TEXT NOT NULL, email TEXT NOT NULL, phone TEXT NOT NULL, courses TEXT NOT NULL, message TEXT NOT NULL, consent INTEGER NOT NULL)")
         connection.execute("CREATE TABLE IF NOT EXISTS trial_request_management (request_id INTEGER PRIMARY KEY REFERENCES trial_requests(id), status TEXT NOT NULL DEFAULT 'new', admin_note TEXT NOT NULL DEFAULT '', close_reason TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL, updated_by INTEGER NOT NULL REFERENCES users(id))")
         connection.execute('CREATE INDEX IF NOT EXISTS trial_management_status ON trial_request_management(status,request_id)')
+        from material_schema import ensure_materials
+        ensure_materials(connection)
         cursor = connection.cursor()
         placeholder = '?'
     else:

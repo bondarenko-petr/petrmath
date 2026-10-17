@@ -10,3 +10,5 @@ h1{letter-spacing:-.035em}h2{font-size:24px;line-height:1.3;margin:0 0 20px;lett
 @media(max-width:700px){.profile-grid{grid-template-columns:1fr}.profile-heading{align-items:flex-start}.avatar{width:56px;height:56px;font-size:42px;border-radius:16px}.panel{padding:24px}.profile-heading h1{font-size:28px}.profile-heading .muted{font-size:16px}}
 @media(max-width:400px){.profile-heading{gap:12px}.panel{padding:20px}.avatar{width:44px;height:44px;font-size:34px}.profile-view{margin-top:24px}}
 .cabinet-nav{display:flex;flex-wrap:wrap;gap:8px;margin:28px 0}.cabinet-nav a{font-size:16px;padding:10px 16px;border:1px solid #e2d6f0;background:white;border-radius:10px;text-decoration:none;min-height:44px}.cabinet-nav a:hover{background:#eee5fc}.learning-grid{margin-top:24px}.learning-grid .panel{scroll-margin-top:24px}.learning-grid p{font-size:16px}html{scroll-behavior:smooth}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media(max-width:400px){.cabinet-nav a{padding:9px 12px}}
+
+.material-summary-text{white-space:pre-wrap;overflow-wrap:anywhere}

@@ -6,6 +6,7 @@ from accounts import router as accounts_router
 from admin import router as admin_router
 from lessons import router as lessons_router
 from finance import router as finance_router
+from materials import router as materials_router
 from pathlib import Path
 from typing import Literal
 
@@ -49,6 +50,7 @@ app.include_router(accounts_router)
 app.include_router(admin_router)
 app.include_router(lessons_router)
 app.include_router(finance_router)
+app.include_router(materials_router)
 
 
 @app.exception_handler(sqlite3.Error)
