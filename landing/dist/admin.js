@@ -1,7 +1,7 @@
 let issuedCredentials=null;
-const status = document.querySelector('#status');
+const status = document.querySelector('#admin-status');
 const items = document.querySelector('#items');
-let section = 'trial-requests', offset = 0, busy = false;
+let section = 'overview', offset = 0, busy = false;
 const limit = 20;
 let studentSearch='',studentView='all',studentSort='name';
 const studentFilters=document.querySelector('#student-filters');
@@ -56,8 +56,9 @@ function addField(list, label, value) {
 }
 async function load() {
   if(busy||trialSaving) return;
+  if(section==='overview'){await loadOverview();return;}
   busy = true; clearCredentials(); items.replaceChildren(); status.textContent = 'Загружаем…';
-  document.querySelectorAll('button').forEach(button => button.disabled = true);
+  document.querySelectorAll('#management button').forEach(button => button.disabled = true);
   try {
     const params=new URLSearchParams({limit,offset});if(section==='trial-requests'){params.set('view',trialView);params.set('search',trialSearch);if(trialStatus)params.set('status',trialStatus)}
     if(section==='students'){params.set('include_finance','true');params.set('search',studentSearch);params.set('view',studentView);params.set('sort',studentSort)}
@@ -65,22 +66,23 @@ async function load() {
     document.querySelector('#trial-controls').hidden=section!=='trial-requests';document.querySelector('#student-controls').hidden=section!=='students';items.classList.toggle('trial-list',section==='trial-requests');items.classList.toggle('student-list',section==='students');
     if(section==='trial-requests'){document.querySelector('#trial-active').textContent='В работе ('+result.active_total+')';document.querySelector('#trial-archive').textContent='Архив ('+result.archive_total+')';document.querySelector('#trial-new-count').textContent='Новых: '+result.counts.new;document.querySelector('#trial-active').setAttribute('aria-pressed',String(trialView==='active'));document.querySelector('#trial-archive').setAttribute('aria-pressed',String(trialView==='archive'));}
     document.querySelector('#dashboard').hidden = false;
-    loadLessonSummary();
+
     document.querySelector('#create-student').hidden = section !== 'students';
     document.querySelector('#list-title').textContent = section === 'students' ? 'Зарегистрированные ученики' : 'Заявки на пробный урок';
     document.querySelector('#count').textContent = `Всего: ${result.total}. Показано: ${result.items.length}.`;
     if(section==='students')items.append(renderStudentTable(result.items));else for(const row of result.items)items.append(renderTrialRequest(row));
     status.textContent = result.items.length ? '' : 'Пока записей нет.';
-    document.querySelectorAll('button').forEach(button => button.disabled = false);
+    document.querySelectorAll('#management button').forEach(button => button.disabled = false);
     document.querySelector('#prev').disabled = offset === 0;
     document.querySelector('#next').disabled = offset + limit >= result.total;
     return true;
-  } catch(error) { status.textContent = error.message; document.querySelector('#dashboard').hidden = error.status===401||error.status===403;for(const id of ['requests-tab','students-tab','refresh','trial-active','trial-archive','trial-reset','student-reset'])document.getElementById(id).disabled=false; }
+  } catch(error) { status.textContent = error.message; document.querySelector('#dashboard').hidden = error.status===401||error.status===403;for(const id of ['requests-tab','students-tab','admin-refresh','trial-active','trial-archive','trial-reset','student-reset'])document.getElementById(id).disabled=false; }
   finally { busy = false; }
 }
 function choose(value) {
   if(busy||trialSaving)return;
   section=value; offset=0;
+  document.querySelector('#overview').hidden=value!=='overview';document.querySelector('#management').hidden=value==='overview';document.querySelector('#student-editor').hidden=true;clearCredentials();
   document.querySelector('#requests-tab').setAttribute('aria-pressed',String(section === 'trial-requests'));
   document.querySelector('#students-tab').setAttribute('aria-pressed',String(section === 'students'));
   const location=new URL(window.location.href);location.searchParams.set('section',value);history.replaceState(null,'',location);
@@ -90,11 +92,12 @@ document.querySelector('#requests-tab').onclick=()=>choose('trial-requests');
 document.querySelector('#students-tab').onclick=()=>choose('students');
 document.querySelector('#prev').onclick=()=>{offset=Math.max(0,offset-limit);load();};
 document.querySelector('#next').onclick=()=>{offset+=limit;load();};
-document.querySelector('#refresh').onclick=()=>load();
-if(new URLSearchParams(window.location.search).get('section')==='students'){section='students';document.querySelector('#students-tab').setAttribute('aria-pressed','true');document.querySelector('#requests-tab').setAttribute('aria-pressed','false')}
+document.querySelector('#admin-refresh').onclick=()=>load();
+const requestedSection=new URLSearchParams(window.location.search).get('section');if(['students','trial-requests'].includes(requestedSection)){section=requestedSection;document.querySelector('#overview').hidden=true;document.querySelector('#management').hidden=false;document.querySelector('#students-tab').setAttribute('aria-pressed',String(section==='students'));document.querySelector('#requests-tab').setAttribute('aria-pressed',String(section==='trial-requests'))}
 load();
 
-document.querySelector('a[href="#students-tab"]').addEventListener('click', () => { if(!busy) choose('students'); });
+document.querySelectorAll('[data-admin-section]').forEach(link=>link.addEventListener('click',()=>choose(link.dataset.adminSection)));
+document.querySelector('a[href="#admin-homework"]').addEventListener('click',()=>choose('overview'));
 
 let editing=null;
 const studentForm=document.querySelector('#student-form');
@@ -105,7 +108,7 @@ async function mutate(path,method,data){
 }
 function clearCredentials(){issuedCredentials=null;document.querySelector('#email-status').textContent='';document.querySelector('#send-credentials').hidden=true;document.querySelector('#credentials').hidden=true;document.querySelector('#issued-password').textContent='';document.querySelector('#issued-username').textContent='';}
 function showCredentials(data){issuedCredentials=data;document.querySelector('#email-help').textContent=data.email?'Письмо будет отправлено на '+data.email+'. Оно объяснит, как войти и сменить временный пароль.':'Email не указан. Передайте пароль вручную; для отправки укажите email и выполните сброс пароля.';document.querySelector('#send-credentials').hidden=!data.email;document.querySelector('#send-credentials').disabled=false;document.querySelector('#email-status').textContent='';document.querySelector('#issued-username').textContent=data.username;document.querySelector('#issued-password').textContent=data.temporary_password;document.querySelector('#credentials').hidden=false;document.querySelector('#credentials').scrollIntoView({block:'center'});}
-function editStudent(row=null){const picker=studentForm.elements.timezone;const saved=row?.timezone||'';picker.replaceChildren(new Option('По умолчанию для учеников',''));const zones=new Set(['UTC','Europe/Moscow','Europe/Berlin','Asia/Vladivostok',...(Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):[]),...(saved?[saved]:[])]);const names={'Europe/Moscow':'Москва','Europe/Berlin':'Берлин','Asia/Vladivostok':'Владивосток','Asia/Yekaterinburg':'Екатеринбург','Asia/Novosibirsk':'Новосибирск','Asia/Irkutsk':'Иркутск','Asia/Krasnoyarsk':'Красноярск','Asia/Kamchatka':'Камчатка','Europe/Samara':'Самара','Europe/Kaliningrad':'Калининград'};for(const zone of [...zones].sort())picker.add(new Option(names[zone]?names[zone]+' ('+zone+')':zone,zone));picker.value=saved;clearCredentials();editing=row?.id??null;studentForm.reset();studentFormStatus.textContent='';const login=studentForm.elements.username;const legacy=!!row&&!/^[a-zA-Z0-9._-]{3,40}$/.test(row.username);login.readOnly=legacy;login.maxLength=legacy?254:40;login.minLength=legacy?1:3;if(legacy){login.removeAttribute('pattern');studentFormStatus.textContent='Сохранён прежний логин для входа. Остальные данные можно редактировать.';}else login.setAttribute('pattern','[a-zA-Z0-9._\\-]+');document.querySelector('#student-editor').hidden=false;document.querySelector('#editor-title').textContent=row?'Редактировать ученика':'Добавить ученика';if(row){for(const field of ['name','username','email','phone','school_grade','default_duration_minutes','timezone'])studentForm.elements[field].value=row[field]??'';studentForm.elements.price.value=(row.default_price_kopecks/100).toFixed(2);}studentForm.scrollIntoView({block:'start'});studentForm.elements.name.focus();}
+function editStudent(row=null){const picker=studentForm.elements.timezone;const saved=row?.timezone||'';picker.replaceChildren(new Option('По умолчанию для учеников',''));const zones=new Set(['UTC','Europe/Moscow','Europe/Berlin','Asia/Vladivostok',...(Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):[]),...(saved?[saved]:[])]);const names={'Europe/Moscow':'Москва','Europe/Berlin':'Берлин','Asia/Vladivostok':'Владивосток','Asia/Yekaterinburg':'Екатеринбург','Asia/Novosibirsk':'Новосибирск','Asia/Irkutsk':'Иркутск','Asia/Krasnoyarsk':'Красноярск','Asia/Kamchatka':'Камчатка','Europe/Samara':'Самара','Europe/Kaliningrad':'Калининград'};for(const zone of [...zones].sort())picker.add(new Option(names[zone]?names[zone]+' ('+zone+')':zone,zone));picker.value=saved;clearCredentials();editing=row?.id??null;studentForm.reset();studentFormStatus.textContent='';const login=studentForm.elements.username;const legacy=!!row&&!/^[a-zA-Z0-9._-]{3,40}$/.test(row.username);login.readOnly=legacy;login.maxLength=legacy?254:40;login.minLength=legacy?1:3;if(legacy){login.removeAttribute('pattern');studentFormStatus.textContent='Сохранён прежний логин для входа. Остальные данные можно редактировать.';}else login.setAttribute('pattern','[a-zA-Z0-9._\\-]+');document.querySelector('#student-editor').hidden=false;document.querySelector('#student-editor-title').textContent=row?'Редактировать ученика':'Добавить ученика';if(row){for(const field of ['name','username','email','phone','school_grade','default_duration_minutes','timezone'])studentForm.elements[field].value=row[field]??'';studentForm.elements.price.value=(row.default_price_kopecks/100).toFixed(2);}studentForm.scrollIntoView({block:'start'});studentForm.elements.name.focus();}
 document.querySelector('#create-student').onclick=()=>editStudent();
 document.querySelector('#cancel-editor').onclick=()=>{document.querySelector('#student-editor').hidden=true;studentForm.reset();};
 document.querySelector('#close-credentials').onclick=clearCredentials;
@@ -126,3 +129,10 @@ document.querySelector('#send-credentials').onclick=async()=>{
  try{await mutate('students/'+data.id+'/send-credentials','POST',{temporary_password:data.temporary_password});if(issuedCredentials===data)document.querySelector('#email-status').textContent='Почтовый сервер принял письмо. Попросите ученика проверить входящие и папку «Спам».';}
  catch(error){if(issuedCredentials===data){document.querySelector('#email-status').textContent=error.message;button.disabled=false;}}
 };
+
+async function loadOverview(){
+ busy=true;status.textContent='Проверяем доступ…';
+ try{const user=await get('auth/me');if(user.role!=='admin'||user.must_change_password){const error=new Error('Для доступа войдите как администратор и смените временный пароль при необходимости.');error.status=403;throw error}document.querySelector('#dashboard').hidden=false;status.textContent='';const target=document.querySelector('#recent-materials');target.textContent='Загружаем проведённые уроки…';
+ try{const data=await get('materials?limit=5');target.replaceChildren();let tz='Europe/Berlin';try{tz=localStorage.getItem('krug-pi-primary-zone')||tz;new Intl.DateTimeFormat('ru-RU',{timeZone:tz})}catch{tz='Europe/Berlin'}for(const row of data.items){const card=trialElement('article',undefined,'home-material-card');card.append(trialElement('h3',row.student_name+' · '+(row.topic||'Математика')),trialElement('p',new Date(row.starts_at).toLocaleString('ru-RU',{timeZone:tz,dateStyle:'short',timeStyle:'short'})+' · '+tz,'muted small'));const homeworkFiles=row.files.filter(f=>f.category==='homework').length,notesFiles=row.files.filter(f=>f.category==='notes').length;card.append(trialElement('p','Домашнее задание: '+(row.homework||homeworkFiles?'добавлено':'не добавлено')+' · Конспект: '+(row.notes||notesFiles?'добавлен':'не добавлен')));const link=trialElement('a','Открыть и редактировать материалы →');link.href='materials.html?lesson_id='+row.lesson_id+'&student_id='+row.student_id;card.append(link);target.append(card)}if(!data.items.length)target.textContent='Проведённых уроков пока нет. После занятия отметьте его проведённым в календаре.'}catch{target.textContent='Не удалось загрузить материалы. Откройте раздел «Все материалы».'}
+ }catch(error){status.textContent=error.message;document.querySelector('#dashboard').hidden=true}finally{busy=false}
+}
