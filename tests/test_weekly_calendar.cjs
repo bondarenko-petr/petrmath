@@ -75,11 +75,11 @@ class FakeElement{
  releasePointerCapture(){this.capture=null}
  remove(){if(this.parent)this.parent.children=this.parent.children.filter(n=>n!==this)}
 }
-function renderedCalendar(){
+function renderedCalendar(weekStart='2099-01-05',secondaryZone='Europe/Berlin'){
  const document={createElement:tag=>new FakeElement(tag),addEventListener:()=>{},removeEventListener:()=>{}};
  const subject=vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../landing/dist/weekly-calendar.js'),'utf8')+';WeeklyCalendar',{Intl,Date,document,setInterval:()=>1,clearInterval:()=>{}});
  const root=new FakeElement('div'),calls=[];
- const dispose=subject.render(root,[],{weekStart:'2099-01-05',timezone:'Europe/Moscow',secondaryZone:'Europe/Berlin',onCreate:(...args)=>calls.push(args),onOpen:()=>{}});
+ const dispose=subject.render(root,[],{weekStart,timezone:'Europe/Moscow',secondaryZone,onCreate:(...args)=>calls.push(args),onOpen:()=>{}});
  const day=root.children[0].children.find(n=>n.className.split(' ').includes('time-day'));
  return {subject,root,day,calls,dispose};
 }
@@ -95,4 +95,24 @@ test('drag stages one interval and suppresses duplicate click; touch keeps nativ
  day.onpointerup({pointerId:1});assert.equal(calls.length,1);assert.equal(calls[0][1],90);
  slots[30].onclick({detail:1});assert.equal(calls.length,1);
  slots[32].onclick({detail:0});assert.equal(calls.length,2);assert.equal(calls[1][1],undefined);dispose();
+});
+
+test('DST corrections show exact Sunday time only after the autumn transition',()=>{
+ const {root,dispose}=renderedCalendar('2026-10-19');
+ const week=root.children[0],days=week.children.filter(n=>n.className.split(' ').includes('time-day'));
+ assert.equal(week.children[0].textContent,'Москва');
+ assert.equal(days[0].children.filter(n=>n.className==='timezone-correction').length,0);
+ const marks=days[6].children.filter(n=>n.className==='timezone-correction');
+ assert.equal(marks.length,20);assert.equal(marks[0].style.top,'256px');assert.equal(marks[0].textContent,'Берлин 02:00');
+ assert.equal(marks.find(n=>n.style.top==='512px').textContent,'Берлин 06:00');
+ const axis=week.children.find(n=>n.className==='time-axis secondary-axis');
+ assert.equal(axis.children[8].textContent,'07:00');assert.equal(axis.children[8].children.length,0);
+ assert.equal(week.children.filter(n=>n.className.includes('time-day-heading')).at(-1).children.at(-1).textContent,'Перевод часов · Берлин');dispose();
+});
+test('spring corrections skip the missing Berlin hour and ordinary weeks stay clean',()=>{
+ const {root,dispose}=renderedCalendar('2027-03-22');
+ const sunday=root.children[0].children.filter(n=>n.className.split(' ').includes('time-day'))[6];
+ const marks=sunday.children.filter(n=>n.className==='timezone-correction');
+ assert.equal(marks[0].style.top,'256px');assert.equal(marks[0].textContent,'Берлин 03:00');dispose();
+ for(const zone of ['Europe/Berlin','']){const normal=renderedCalendar('2026-10-26',zone);const days=normal.root.children[0].children.filter(n=>n.className.split(' ').includes('time-day'));assert.ok(days.every(day=>day.children.every(n=>n.className!=='timezone-correction')));normal.dispose()}
 });
