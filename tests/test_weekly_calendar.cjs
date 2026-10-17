@@ -38,3 +38,61 @@ test('short event visual intervals do not cover one another',()=>{
  const result=calendar.lanes(calendar.segments(rows,'2026-10-17','UTC'));
  assert.equal(result[0].lanes,2);assert.notEqual(result[0].lane,result[1].lane);
 });
+
+test('Berlin secondary scale follows the displayed dates including DST week',()=>{
+ const summer=calendar.secondaryHours('2026-10-12',8,'Europe/Moscow','Europe/Berlin');
+ assert.equal(summer[0].values[0].time,'07:00');
+ const transition=calendar.secondaryHours('2026-10-19',8,'Europe/Moscow','Europe/Berlin');
+ assert.equal(transition[0].values[0].time,'07:00');
+ assert.equal(transition[6].values[0].time,'06:00');
+ const winter=calendar.secondaryHours('2026-10-26',8,'Europe/Moscow','Europe/Berlin');
+ assert.equal(winter[0].values[0].time,'06:00');
+});
+test('marks secondary dates and rejects missing or ambiguous primary wall time',()=>{
+ const rows=calendar.secondaryHours('2026-10-12',0,'Europe/Moscow','Europe/Berlin');
+ assert.equal(rows[0].values[0].dayOffset,-1);
+ assert.equal(calendar.instants('2027-03-28',150,'Europe/Berlin').length,0);
+ assert.equal(calendar.instants('2027-10-31',150,'Europe/Berlin').length,2);
+ assert.equal(calendar.selection('2027-03-28',90,180,'Europe/Berlin'),null);
+});
+test('selected intervals include the last half-hour cell and support reverse drag',()=>{
+ const forward=calendar.selection('2027-01-04',900,960,'Europe/Moscow');
+ assert.equal(forward.value,'2027-01-04T15:00');assert.equal(forward.duration,90);
+ const reverse=calendar.selection('2027-01-04',960,900,'Europe/Moscow');
+ assert.equal(reverse.value,forward.value);assert.equal(reverse.duration,90);
+ const midnight=calendar.selection('2027-01-04',1410,1410,'Europe/Moscow');
+ assert.equal(midnight.duration,30);assert.equal(midnight.end,1440);
+});
+
+class FakeElement{
+ constructor(tag){this.tag=tag;this.children=[];this.style={};this.dataset={};this.attrs={};this.scrollTop=0;this.textContent='';this.className='';this.classList={toggle:()=>{}};}
+ append(...nodes){for(const node of nodes){node.parent=this;this.children.push(node)}}
+ replaceChildren(...nodes){this.children=[];this.append(...nodes)}
+ setAttribute(k,v){this.attrs[k]=v}
+ getBoundingClientRect(){return {top:0,bottom:2000}}
+ setPointerCapture(id){this.capture=id}
+ hasPointerCapture(id){return this.capture===id}
+ releasePointerCapture(){this.capture=null}
+ remove(){if(this.parent)this.parent.children=this.parent.children.filter(n=>n!==this)}
+}
+function renderedCalendar(){
+ const document={createElement:tag=>new FakeElement(tag),addEventListener:()=>{},removeEventListener:()=>{}};
+ const subject=vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../landing/dist/weekly-calendar.js'),'utf8')+';WeeklyCalendar',{Intl,Date,document,setInterval:()=>1,clearInterval:()=>{}});
+ const root=new FakeElement('div'),calls=[];
+ const dispose=subject.render(root,[],{weekStart:'2099-01-05',timezone:'Europe/Moscow',secondaryZone:'Europe/Berlin',onCreate:(...args)=>calls.push(args),onOpen:()=>{}});
+ const day=root.children[0].children.find(n=>n.className.split(' ').includes('time-day'));
+ return {subject,root,day,calls,dispose};
+}
+test('opens exactly at 08:00 and preserves manual scroll on rerender',()=>{
+ const {subject,root,dispose}=renderedCalendar();assert.equal(root.scrollTop,8*64);dispose();root.scrollTop=700;
+ const stop=subject.render(root,[],{weekStart:'2099-01-12',timezone:'Europe/Moscow',onCreate:()=>{},onOpen:()=>{}});assert.equal(root.scrollTop,700);stop();
+});
+test('drag stages one interval and suppresses duplicate click; touch keeps native tap',()=>{
+ const {day,calls,dispose}=renderedCalendar(),slots=day.children.filter(n=>n.className==='time-slot');
+ const down={pointerType:'mouse',button:0,pointerId:1,clientY:960,preventDefault:()=>{}};
+ slots[30].onpointerdown(down);day.onpointermove({pointerId:1,clientY:1024});
+ assert.equal(calls.length,0);
+ day.onpointerup({pointerId:1});assert.equal(calls.length,1);assert.equal(calls[0][1],90);
+ slots[30].onclick({detail:1});assert.equal(calls.length,1);
+ slots[32].onclick({detail:0});assert.equal(calls.length,2);assert.equal(calls[1][1],undefined);dispose();
+});
