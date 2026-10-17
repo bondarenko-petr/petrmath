@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS student_profiles (
   user_id BIGINT UNSIGNED PRIMARY KEY,
   phone VARCHAR(40) NOT NULL DEFAULT '',
   school_grade TINYINT UNSIGNED NULL,
+  timezone VARCHAR(100) NULL,
   default_price_kopecks BIGINT UNSIGNED NOT NULL DEFAULT 0,
   default_duration_minutes INT UNSIGNED NOT NULL DEFAULT 60,
   FOREIGN KEY (user_id) REFERENCES users(id)

@@ -83,6 +83,10 @@ def list_materials(response:Response,student_id:int|None=Query(None,gt=0),lesson
         c.execute('SELECT l.*,u.name AS student_name FROM lessons l JOIN users u ON u.id=l.student_id WHERE '+condition+f' ORDER BY l.starts_at DESC,l.id DESC LIMIT {p} OFFSET {p}',(*args,limit,offset))
         rows=[dict(r) for r in c.fetchall()]
         items=[describe(c,p,row) for row in rows]
+        if user['role']=='student':
+            from student_timezones import student_zone
+            display_zone=student_zone(c,p,user['id'])
+            for item in items: item['timezone']=display_zone
     response.headers['Cache-Control']='no-store'
     return {'items':items,'total':total,'limit':limit,'offset':offset,'role':user['role']}
 

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
 from accounts import database, profile, guard
 from admin import require_admin
+from student_timezones import student_zone
 
 router = APIRouter(prefix='/api/lessons', tags=['Lessons'])
 
@@ -49,6 +50,7 @@ class LessonInput(BaseModel):
     meeting_url: str = Field(default='', max_length=2000)
     weekdays: list[int] = Field(default_factory=list, max_length=7)
     recurrence_end: date | None = None
+    recurrence_timezone: Literal['schedule', 'student'] = 'schedule'
 
     @field_validator('weekdays')
     @classmethod
@@ -85,6 +87,7 @@ class StatusInput(BaseModel):
 
 def serialize(row):
     data = dict(row)
+    data['student_timezone'] = data.get('student_timezone') or os.environ.get('LESSON_TIMEZONE', 'Europe/Moscow')
     data['starts_at'] = datetime.fromtimestamp(data['starts_at'], timezone.utc).isoformat()
     data['ends_at'] = datetime.fromtimestamp(data['ends_at'], timezone.utc).isoformat()
     return data
@@ -145,6 +148,9 @@ def student_defaults(cursor, p, student_id):
 @router.get('/settings')
 def settings(user=Depends(member)):
     name = os.environ.get('LESSON_TIMEZONE', 'Europe/Moscow')
+    if user['role'] == 'student':
+        with database() as (c,p):
+            name = student_zone(c,p,user['id'])
     zone(name)
     return {'timezone': name, 'role': user['role'], 'today': datetime.now(zone(name)).date().isoformat()}
 
@@ -152,7 +158,7 @@ def settings(user=Depends(member)):
 @router.get('')
 def list_lessons(response: Response, from_ts: int = Query(0, ge=0), to_ts: int | None = Query(None, ge=0),
                  from_date: date | None = None, to_date: date | None = None, student_id: int | None = Query(None, gt=0), limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), overlap: bool=False, user=Depends(member)):
-    tz = os.environ.get('LESSON_TIMEZONE', 'Europe/Moscow')
+    tz = settings(user)['timezone']
     if from_date:
         from_ts = timestamp(datetime.combine(from_date, datetime.min.time()), tz)
     if to_date:
@@ -168,7 +174,7 @@ def list_lessons(response: Response, from_ts: int = Query(0, ge=0), to_ts: int |
             clause += f' AND l.student_id={p}'; args.append(owner)
         c.execute(f'SELECT COUNT(*) AS total FROM lessons l WHERE {clause}', tuple(args))
         total = c.fetchone()['total']
-        c.execute(f'SELECT l.*,u.name AS student_name FROM lessons l JOIN users u ON u.id=l.student_id WHERE {clause} ORDER BY l.starts_at,l.id LIMIT {p} OFFSET {p}', (*args, limit, offset))
+        c.execute(f'SELECT l.*,u.name AS student_name,s.timezone AS student_timezone FROM lessons l JOIN users u ON u.id=l.student_id LEFT JOIN student_profiles s ON s.user_id=l.student_id WHERE {clause} ORDER BY l.starts_at,l.id LIMIT {p} OFFSET {p}', (*args, limit, offset))
         items = [serialize(r) for r in c.fetchall()]
     response.headers['Cache-Control'] = 'no-store'
     return {'items': items, 'total': total, 'limit': limit, 'offset': offset}
@@ -177,13 +183,13 @@ def list_lessons(response: Response, from_ts: int = Query(0, ge=0), to_ts: int |
 @router.get('/summary')
 def summary(user=Depends(member)):
     now = int(time.time())
-    tz = zone(os.environ.get('LESSON_TIMEZONE', 'Europe/Moscow'))
+    tz = zone(settings(user)['timezone'])
     today = datetime.fromtimestamp(now, tz).replace(hour=0, minute=0, second=0, microsecond=0)
     week = today - timedelta(days=today.weekday())
     with database() as (c, p):
         owner = '' if user['role'] == 'admin' else f' AND l.student_id={p}'
         args = () if user['role'] == 'admin' else (user['id'],)
-        base = 'SELECT l.*,u.name AS student_name FROM lessons l JOIN users u ON u.id=l.student_id WHERE '
+        base = 'SELECT l.*,u.name AS student_name,s.timezone AS student_timezone FROM lessons l JOIN users u ON u.id=l.student_id LEFT JOIN student_profiles s ON s.user_id=l.student_id WHERE '
         c.execute(base + f"l.ends_at>{p} AND l.status='scheduled'" + owner + ' ORDER BY l.starts_at LIMIT 5', (now, *args))
         upcoming = [serialize(r) for r in c.fetchall()]
         c.execute(base + f'l.starts_at>={p} AND l.starts_at<{p}' + owner + ' ORDER BY l.starts_at', (int(week.timestamp()), int((week + timedelta(days=7)).timestamp()), *args))
@@ -194,8 +200,13 @@ def summary(user=Depends(member)):
 @router.post('', status_code=201)
 def create(data: LessonInput, request: Request, user=Depends(require_admin)):
     guard(request)
-    tz = zone(data.timezone)
-    first = data.starts_at.astimezone(tz).replace(tzinfo=None) if data.starts_at.tzinfo else data.starts_at
+    recurrence_zone = data.timezone
+    if data.recurrence_timezone == 'student':
+        with database() as (c,p):
+            student_defaults(c,p,data.student_id)
+            recurrence_zone = student_zone(c,p,data.student_id)
+    tz = zone(recurrence_zone)
+    first = datetime.fromtimestamp(timestamp(data.starts_at,data.timezone),tz).replace(tzinfo=None)
     dates = [first]
     if data.weekdays or data.recurrence_end:
         if not data.weekdays or not data.recurrence_end or not first.date() <= data.recurrence_end <= first.date() + timedelta(days=366):
@@ -203,7 +214,7 @@ def create(data: LessonInput, request: Request, user=Depends(require_admin)):
         dates = [first + timedelta(days=n) for n in range((data.recurrence_end - first.date()).days + 1) if (first + timedelta(days=n)).weekday() in data.weekdays]
         if not dates:
             raise HTTPException(422, 'В выбранном периоде нет занятий')
-    starts = [timestamp(d, data.timezone) for d in dates]
+    starts = [timestamp(d, recurrence_zone) for d in dates]
     if min(starts) < int(time.time()):
         raise HTTPException(422, 'Новое занятие должно быть в будущем')
     with database() as (c, p):
@@ -215,11 +226,11 @@ def create(data: LessonInput, request: Request, user=Depends(require_admin)):
         check_conflicts(c, p, records)
         series_id = None
         if data.weekdays:
-            c.execute(f'INSERT INTO lesson_series (timezone,created_at) VALUES ({p},{p})', (data.timezone, int(time.time())))
+            c.execute(f'INSERT INTO lesson_series (timezone,created_at) VALUES ({p},{p})', (recurrence_zone, int(time.time())))
             series_id = c.lastrowid
         ids = []
         for record in records:
-            c.execute(f'INSERT INTO lessons (student_id,series_id,starts_at,ends_at,duration_minutes,price_kopecks,topic,meeting_url,timezone,status,created_at) VALUES ({",".join([p]*11)})', (data.student_id, series_id, record['starts_at'], record['ends_at'], duration, price, data.topic, data.meeting_url, data.timezone, 'scheduled', int(time.time())))
+            c.execute(f'INSERT INTO lessons (student_id,series_id,starts_at,ends_at,duration_minutes,price_kopecks,topic,meeting_url,timezone,status,created_at) VALUES ({",".join([p]*11)})', (data.student_id, series_id, record['starts_at'], record['ends_at'], duration, price, data.topic, data.meeting_url, recurrence_zone, 'scheduled', int(time.time())))
             ids.append(c.lastrowid)
     return {'ids': ids, 'series_id': series_id, 'count': len(ids)}
 

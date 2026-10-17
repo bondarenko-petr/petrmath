@@ -106,3 +106,41 @@ class LessonTests(unittest.TestCase):
         self.assertEqual(overlapping['items'][0]['id'],lesson_id)
         with database() as (c,p):c.execute('UPDATE lessons SET ends_at=? WHERE id=?',(lower,lesson_id))
         self.assertEqual(self.client.get('/api/lessons',params={'from_ts':lower,'to_ts':upper,'overlap':'true'}).json()['total'],0)
+
+    def test_student_timezone_filters_and_profile_change_keep_instants(self):
+        result=self.create(self.lesson|{'starts_at':'2027-01-04T20:00:00Z'})
+        self.assertEqual(result.status_code,201,result.text)
+        with database() as (c,p):c.execute('UPDATE student_profiles SET timezone=? WHERE user_id=?',('Asia/Vladivostok',self.id))
+        admin_row=self.client.get('/api/lessons').json()['items'][0]
+        self.assertEqual(admin_row['student_timezone'],'Asia/Vladivostok')
+        self.post('logout',{});self.post('login',self.data)
+        self.assertEqual(self.client.get('/api/lessons/settings').json()['timezone'],'Asia/Vladivostok')
+        rows=self.client.get('/api/lessons?from_date=2027-01-05&to_date=2027-01-06').json()['items']
+        self.assertEqual(rows[0]['starts_at'],'2027-01-04T20:00:00+00:00')
+        self.assertEqual(self.client.get('/api/lessons?from_date=2027-01-04&to_date=2027-01-05').json()['total'],0)
+        self.assertEqual(self.client.get('/api/lessons/summary').json()['timezone'],'Asia/Vladivostok')
+        with database() as (c,p):c.execute('UPDATE student_profiles SET timezone=? WHERE user_id=?',('Europe/Berlin',self.id))
+        self.assertEqual(self.client.get('/api/lessons').json()['items'][0]['starts_at'],rows[0]['starts_at'])
+
+    def test_student_series_keeps_wall_time_across_dst_and_bulk_edit(self):
+        with database() as (c,p):c.execute('UPDATE student_profiles SET timezone=? WHERE user_id=?',('Europe/Berlin',self.id))
+        data=self.lesson|{'starts_at':'2027-03-22T20:00:00','timezone':'Europe/Moscow','weekdays':[0],'recurrence_end':'2027-04-05','recurrence_timezone':'student'}
+        result=self.create(data);self.assertEqual(result.status_code,201,result.text)
+        rows=self.client.get('/api/lessons').json()['items']
+        self.assertEqual([r['starts_at'][11:16] for r in rows],['17:00','16:00','16:00'])
+        self.assertTrue(all(r['timezone']=='Europe/Berlin' for r in rows))
+        # The editor submits an absolute instant and the existing series timezone.
+        edit=self.lesson|{'starts_at':'2027-03-22T17:00:00Z','timezone':'Europe/Berlin','scope':'series','topic':'Новая тема'}
+        response=self.client.put('/api/lessons/'+str(rows[0]['id']),json=edit,headers=self.headers)
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual([r['starts_at'] for r in self.client.get('/api/lessons').json()['items']],[r['starts_at'] for r in rows])
+
+    def test_profile_timezone_validation_and_storage(self):
+        data={'name':'Новый','username':'timezonetest','default_price_kopecks':1000,'default_duration_minutes':60,'timezone':'Mars/Unknown'}
+        response=self.client.post('/api/admin/students',json=data,headers=self.headers)
+        self.assertEqual(response.status_code,422,response.text)
+        data['timezone']='Asia/Vladivostok'
+        response=self.client.post('/api/admin/students',json=data,headers=self.headers)
+        self.assertEqual(response.status_code,201,response.text)
+        rows=self.client.get('/api/admin/students').json()['items']
+        self.assertEqual(next(r for r in rows if r['id']==response.json()['id'])['timezone'],'Asia/Vladivostok')
