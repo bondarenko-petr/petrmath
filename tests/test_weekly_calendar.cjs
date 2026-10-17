@@ -75,11 +75,11 @@ class FakeElement{
  releasePointerCapture(){this.capture=null}
  remove(){if(this.parent)this.parent.children=this.parent.children.filter(n=>n!==this)}
 }
-function renderedCalendar(weekStart='2099-01-05',secondaryZone='Europe/Berlin'){
+function renderedCalendar(weekStart='2099-01-05',secondaryZone='Europe/Berlin',options={},rows=[]){
  const document={createElement:tag=>new FakeElement(tag),addEventListener:()=>{},removeEventListener:()=>{}};
  const subject=vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../landing/dist/weekly-calendar.js'),'utf8')+';WeeklyCalendar',{Intl,Date,document,setInterval:()=>1,clearInterval:()=>{}});
  const root=new FakeElement('div'),calls=[];
- const dispose=subject.render(root,[],{weekStart,timezone:'Europe/Moscow',secondaryZone,onCreate:(...args)=>calls.push(args),onOpen:()=>{}});
+ const dispose=subject.render(root,rows,{...options,weekStart,timezone:'Europe/Moscow',secondaryZone,onCreate:(...args)=>calls.push(args),onOpen:()=>{}});
  const day=root.children[0].children.find(n=>n.className.split(' ').includes('time-day'));
  return {subject,root,day,calls,dispose};
 }
@@ -116,4 +116,23 @@ test('spring corrections skip the missing Berlin hour and ordinary weeks stay cl
  const marks=sunday.children.filter(n=>n.className==='timezone-correction');
  assert.equal(marks[0].style.top,'256px');assert.equal(marks[0].textContent,'Берлин 03:00');dispose();
  for(const zone of ['Europe/Berlin','']){const normal=renderedCalendar('2026-10-26',zone);const days=normal.root.children[0].children.filter(n=>n.className.split(' ').includes('time-day'));assert.ok(days.every(day=>day.children.every(n=>n.className!=='timezone-correction')));normal.dispose()}
+});
+
+test('cropped range aligns axes, clips ongoing lessons and supports 45-minute drag',()=>{
+ const rows=[lesson(1,'2099-01-05T10:15:00Z','2099-01-05T11:15:00Z'),lesson(2,'2099-01-05T09:00:00Z','2099-01-05T10:00:00Z')];
+ const {root,day,calls,dispose}=renderedCalendar('2099-01-05','Europe/Berlin',{startMinute:810},rows);
+ assert.equal(root.scrollTop,0);assert.equal(day.style.height,'672px');
+ const axis=root.children[0].children.find(n=>n.className==='time-axis');
+ assert.equal(axis.children[0].textContent,'13:30');assert.equal(axis.children[0].style.top,'0px');assert.equal(axis.children[1].style.top,'32px');
+ const slots=day.children.filter(n=>n.className==='time-slot');assert.equal(slots.length,42);assert.equal(slots[0].style.top,'0px');
+ const events=day.children.filter(n=>n.className.startsWith('calendar-event'));assert.equal(events.length,1);assert.equal(events[0].style.top,'0px');assert.equal(events[0].style.height,'46px');
+ slots[0].onpointerdown({pointerType:'mouse',button:0,pointerId:1,clientY:0,preventDefault:()=>{}});
+ day.onpointermove({pointerId:1,clientY:32});day.onpointerup({pointerId:1});
+ assert.equal(calls[0][0],'2099-01-05T13:30');assert.equal(calls[0][1],45);dispose();
+});
+test('switching to full day restores all slots and resets range scroll',()=>{
+ const {subject,root,dispose}=renderedCalendar('2099-01-05','',{startMinute:810});dispose();root.scrollTop=300;
+ const stop=subject.render(root,[],{weekStart:'2099-01-05',timezone:'Europe/Moscow',secondaryZone:'',startMinute:0,onCreate:()=>{},onOpen:()=>{}});
+ assert.equal(root.scrollTop,0);const day=root.children[0].children.find(n=>n.className.split(' ').includes('time-day'));
+ assert.equal(day.children.filter(n=>n.className==='time-slot').length,96);stop();
 });

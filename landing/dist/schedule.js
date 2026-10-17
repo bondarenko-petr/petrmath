@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s), form=$('#lesson-form'), filters=$('#filters');
-let listGeneration=0;
+let listGeneration=0,showFullDay=false;
 let config, students=[],editing=null,offset=0,weekStart,busy=false,calendarGeneration=0,calendarCleanup=null,calendarDuration=null,secondaryZone='Europe/Berlin';
 const states={scheduled:'Запланировано',completed:'Проведено',cancelled:'Отменено'};
 function plus(date,n){const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
@@ -34,7 +34,9 @@ async function calendar(){
  if(calendarCleanup){calendarCleanup();calendarCleanup=null}
  $('#selected-lesson').hidden=true;
  if(config.role==='student'){root.replaceChildren();root.className='student-calendar';if(!rows.length)root.append(text('p','На этой неделе занятий нет.'));for(const row of rows)root.append(card(row,false));return}
- calendarCleanup=WeeklyCalendar.render(root,rows,{weekStart:requestedWeek,timezone:config.timezone,secondaryZone,onCreate:createFromCalendar,onOpen:showCalendarLesson,onInvalid:message=>$('#status').textContent=message});
+ const startMinute=showFullDay?0:Math.max(0,Math.floor((WeeklyCalendar.local(new Date(),config.timezone).minute-60)/15)*15);
+ $('#day-range').hidden=false;$('#day-range').textContent=showFullDay?'Вернуть текущий диапазон':'Показать весь день';$('#range-label').textContent='Диапазон: '+String(Math.floor(startMinute/60)).padStart(2,'0')+':'+String(startMinute%60).padStart(2,'0')+'–24:00 · '+config.timezone;
+ calendarCleanup=WeeklyCalendar.render(root,rows,{startMinute,weekStart:requestedWeek,timezone:config.timezone,secondaryZone,onCreate:createFromCalendar,onOpen:showCalendarLesson,onInvalid:message=>$('#status').textContent=message});
  }catch(e){if(generation===calendarGeneration){if(calendarCleanup)calendarCleanup();calendarCleanup=null;root.replaceChildren(text('p','Не удалось загрузить календарь. Нажмите «Обновить».'))}throw e}
  finally{if(generation===calendarGeneration){root.inert=false;root.setAttribute('aria-busy','false')}}
 }
@@ -44,6 +46,7 @@ $('#add').onclick=()=>openEditor();$('#cancel').onclick=()=>{$('#editor').hidden
 filters.onsubmit=event=>{event.preventDefault();offset=0;list().catch(e=>$('#status').textContent=e.message)};
 for(const [selector,delta] of [['#previous-week',-7],['#next-week',7]])$(selector).onclick=()=>{weekStart=plus(weekStart,delta);calendar().catch(e=>$('#status').textContent=e.message)};
 function currentWeek(){weekStart=plus(config.today,-((new Date(config.today+'T12:00:00Z').getUTCDay()+6)%7))}
+$('#day-range').onclick=()=>{showFullDay=!showFullDay;calendar().catch(e=>$('#status').textContent=e.message)};
 $('#this-week').onclick=()=>{currentWeek();calendar().catch(e=>$('#status').textContent=e.message)};
 $('#previous-page').onclick=()=>{offset=Math.max(0,offset-20);list().catch(e=>$('#status').textContent=e.message)};$('#next-page').onclick=()=>{offset+=20;list().catch(e=>$('#status').textContent=e.message)};
 (async()=>{try{config=await api('/settings');$('#zone').textContent='Все даты и время: '+config.timezone;currentWeek();if(config.role==='admin'){setupPrimaryZone();secondaryZone=config.timezone==='Europe/Berlin'?'Europe/Moscow':'Europe/Berlin';const allowed=['','Europe/Berlin','Europe/Moscow','Europe/London','UTC'];try{const saved=localStorage.getItem('krug-pi-secondary-zone');if(saved!==null&&allowed.includes(saved)&&saved!==config.timezone)secondaryZone=saved}catch{}$('#secondary-zone').value=secondaryZone;$('#secondary-zone-control').hidden=false;$('#back').href='admin.html';$('#add').hidden=false;$('#student-filter').hidden=false;let start=0,total;do{const r=await fetch('/api/admin/students?limit=100&offset='+start);if(!r.ok)throw Error('Не удалось загрузить учеников');const d=await r.json();students.push(...d.items.filter(s=>s.is_active));total=d.total;start+=100}while(start<total);for(const student of students){for(const select of [form.elements.student_id,filters.elements.student_id]){const option=text('option',student.name+' ('+student.username+')');option.value=student.id;select.append(option)}}}else{$('#calendar').className='student-calendar';$('#calendar-legend').hidden=true;$('#calendar-help').hidden=true;}$('#content').hidden=false;await refresh();$('#status').textContent=''}catch(e){$('#status').textContent=e.message}})();
