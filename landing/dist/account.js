@@ -11,12 +11,12 @@ function passwordPanel(){
  document.querySelector('#change-help').textContent=currentUser.must_change_password?'Перед входом в кабинет замените временный пароль своим.':'Выберите новый пароль длиной от 10 символов.';
 }
 async function loadProfile(){
- currentUser=await api('me');status.textContent='';document.querySelector('#auth-panel').hidden=true;
+ currentUser=await api('me');clearStudentDashboard();status.textContent='';document.querySelector('#auth-panel').hidden=true;
  if(currentUser.must_change_password){passwordPanel();return;}
  document.querySelector('#password-panel').hidden=true;document.querySelector('#profile-panel').hidden=false;document.querySelector('main').classList.add('profile-view');
  document.querySelector('#welcome').textContent='Здравствуйте, '+currentUser.name+'!';document.querySelector('#profile-name').textContent=currentUser.name;
  document.querySelector('#profile-email').textContent=currentUser.username;document.querySelector('#profile-role').textContent=currentUser.role==='admin'?'Администратор':'Ученик';
- if(currentUser.role==='student'){loadLessonSummary();loadFinanceSummary();loadMaterialsSummary();}
+ if(currentUser.role==='student'){void loadStudentCalendar();loadLessonSummary();loadFinanceSummary();loadMaterialsSummary();}
  document.querySelector('#admin-link').hidden=currentUser.role!=='admin';document.querySelectorAll('.student-content').forEach(e=>e.hidden=currentUser.role==='admin');
 }
 form.addEventListener('submit',async event=>{event.preventDefault();const button=document.querySelector('#submit');button.disabled=true;status.textContent='Входим…';try{await api('login',{username:form.elements.username.value,password:form.elements.password.value});form.reset();await loadProfile();}catch(error){status.textContent=error.message;}finally{button.disabled=false;}});
@@ -26,7 +26,9 @@ document.querySelector('#password-form').addEventListener('submit',async event=>
  try{await api('change-password',{current_password:document.querySelector('#current-password').value,new_password:next});event.target.reset();await loadProfile();status.textContent='Пароль изменён.';}catch(error){status.textContent=error.message;}finally{button.disabled=false;}
 });
 document.querySelector('#open-password').onclick=passwordPanel;document.querySelector('#cancel-password').onclick=()=>loadProfile().catch(error=>status.textContent=error.message);
-document.querySelector('#logout').onclick=async()=>{try{await api('logout',{});currentUser=null;document.querySelector('#profile-panel').hidden=true;document.querySelector('#password-panel').hidden=true;document.querySelector('#auth-panel').hidden=false;document.querySelector('main').classList.remove('profile-view');status.textContent='Вы вышли из аккаунта.';}catch(error){status.textContent=error.message;}};
+document.querySelector('#logout').onclick=async()=>{try{await api('logout',{});currentUser=null;clearStudentDashboard();document.querySelector('#profile-panel').hidden=true;document.querySelector('#password-panel').hidden=true;document.querySelector('#auth-panel').hidden=false;document.querySelector('main').classList.remove('profile-view');status.textContent='Вы вышли из аккаунта.';}catch(error){status.textContent=error.message;}};
 loadProfile().catch(error=>{if(error.status!==401)status.textContent='Не удалось загрузить профиль. Проверьте подключение и миграцию базы.';});
 
 document.querySelector('#password-logout').onclick=()=>document.querySelector('#logout').onclick();
+
+function clearStudentDashboard(){stopStudentCalendar();lessonSummaryGeneration++;financeSummaryGeneration++;materialsSummaryGeneration++;document.querySelectorAll('[data-next-lesson],[data-next-lessons],[data-week-lessons],[data-finance-summary],[data-homework-summary],[data-notes-summary]').forEach(e=>e.replaceChildren());}

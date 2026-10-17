@@ -79,7 +79,7 @@ function renderedCalendar(weekStart='2099-01-05',secondaryZone='Europe/Berlin',o
  const document={createElement:tag=>new FakeElement(tag),addEventListener:()=>{},removeEventListener:()=>{}};
  const subject=vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../landing/dist/weekly-calendar.js'),'utf8')+';WeeklyCalendar',{Intl,Date,document,setInterval:()=>1,clearInterval:()=>{}});
  const root=new FakeElement('div'),calls=[];
- const dispose=subject.render(root,rows,{...options,weekStart,timezone:'Europe/Moscow',secondaryZone,onCreate:(...args)=>calls.push(args),onOpen:()=>{}});
+ const dispose=subject.render(root,rows,{...options,weekStart,timezone:'Europe/Moscow',secondaryZone,onCreate:(...args)=>calls.push(args),onOpen:options.onOpen||(()=>{})});
  const day=root.children[0].children.find(n=>n.className.split(' ').includes('time-day'));
  return {subject,root,day,calls,dispose};
 }
@@ -135,4 +135,12 @@ test('switching to full day restores all slots and resets range scroll',()=>{
  const stop=subject.render(root,[],{weekStart:'2099-01-05',timezone:'Europe/Moscow',secondaryZone:'',startMinute:0,onCreate:()=>{},onOpen:()=>{}});
  assert.equal(root.scrollTop,0);const day=root.children[0].children.find(n=>n.className.split(' ').includes('time-day'));
  assert.equal(day.children.filter(n=>n.className==='time-slot').length,96);stop();
+});
+
+test('student read-only calendar opens lessons without creating editable time slots',()=>{
+ const opened=[],rows=[lesson(1,'2099-01-05T10:00:00Z','2099-01-05T10:45:00Z')];
+ const {day,calls,dispose}=renderedCalendar('2099-01-05','',{readOnly:true,startMinute:0,onOpen:row=>opened.push(row)},rows);
+ assert.equal(day.children.filter(n=>n.className==='time-slot').length,0);
+ const event=day.children.find(n=>n.className.startsWith('calendar-event'));assert.ok(event);assert.equal(event.style.height,'46px');
+ event.onclick();assert.equal(opened[0].id,1);assert.equal(event.tag,'button');assert.equal(calls.length,0);dispose();
 });
