@@ -93,3 +93,16 @@ class LessonTests(unittest.TestCase):
         first=datetime.fromisoformat(rows[0]['starts_at'])
         second=datetime.fromisoformat(rows[1]['starts_at'])
         self.assertEqual(first.hour,9);self.assertEqual(second.hour,8)
+
+    def test_week_overlap_includes_previous_day_lesson(self):
+        start=datetime(2027,1,3,23,30,tzinfo=timezone.utc)
+        lesson_id=self.create(self.lesson|{'starts_at':start.isoformat(),'timezone':'UTC','duration_minutes':90}).json()['ids'][0]
+        lower=int(datetime(2027,1,4,tzinfo=timezone.utc).timestamp())
+        upper=lower+7*86400
+        normal=self.client.get('/api/lessons',params={'from_ts':lower,'to_ts':upper}).json()
+        overlapping=self.client.get('/api/lessons',params={'from_ts':lower,'to_ts':upper,'overlap':'true'}).json()
+        self.assertEqual(normal['total'],0)
+        self.assertEqual(overlapping['total'],1)
+        self.assertEqual(overlapping['items'][0]['id'],lesson_id)
+        with database() as (c,p):c.execute('UPDATE lessons SET ends_at=? WHERE id=?',(lower,lesson_id))
+        self.assertEqual(self.client.get('/api/lessons',params={'from_ts':lower,'to_ts':upper,'overlap':'true'}).json()['total'],0)

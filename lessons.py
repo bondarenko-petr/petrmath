@@ -151,7 +151,7 @@ def settings(user=Depends(member)):
 
 @router.get('')
 def list_lessons(response: Response, from_ts: int = Query(0, ge=0), to_ts: int | None = Query(None, ge=0),
-                 from_date: date | None = None, to_date: date | None = None, student_id: int | None = Query(None, gt=0), limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), user=Depends(member)):
+                 from_date: date | None = None, to_date: date | None = None, student_id: int | None = Query(None, gt=0), limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), overlap: bool=False, user=Depends(member)):
     tz = os.environ.get('LESSON_TIMEZONE', 'Europe/Moscow')
     if from_date:
         from_ts = timestamp(datetime.combine(from_date, datetime.min.time()), tz)
@@ -160,7 +160,7 @@ def list_lessons(response: Response, from_ts: int = Query(0, ge=0), to_ts: int |
     if to_ts is not None and to_ts <= from_ts:
         raise HTTPException(422, 'Конец периода должен быть позже начала')
     with database() as (c, p):
-        clause, args = f'l.starts_at>={p}', [from_ts]
+        clause, args = (f'l.ends_at>{p}' if overlap else f'l.starts_at>={p}'), [from_ts]
         if to_ts is not None:
             clause += f' AND l.starts_at<{p}'; args.append(to_ts)
         owner = user['id'] if user['role'] == 'student' else student_id
