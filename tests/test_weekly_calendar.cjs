@@ -144,3 +144,11 @@ test('student read-only calendar opens lessons without creating editable time sl
  const event=day.children.find(n=>n.className.startsWith('calendar-event'));assert.ok(event);assert.equal(event.style.height,'46px');
  event.onclick();assert.equal(opened[0].id,1);assert.equal(event.tag,'button');assert.equal(calls.length,0);dispose();
 });
+
+test('student ranges default to 08:00 or use the pupil timezone and clamp at midnight',()=>{
+ assert.equal(calendar.studentRange('fixed','Asia/Vladivostok','2027-01-04T10:37:00Z'),480);
+ assert.equal(calendar.studentRange('current','Asia/Vladivostok','2027-01-04T10:37:00Z'),1170);
+ assert.equal(calendar.studentRange('current','Europe/Moscow','2027-01-04T10:37:00Z'),750);
+ assert.equal(calendar.studentRange('current','Europe/Berlin','2027-01-04T23:30:00Z'),0);
+ assert.equal(calendar.studentRange('current','UTC','2027-01-04T23:59:00Z'),1365);
+});
