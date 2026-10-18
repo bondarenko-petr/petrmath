@@ -153,3 +153,18 @@ class MaterialsTests(unittest.TestCase):
         self.assertEqual(date_filter['total'],1);self.assertEqual(date_filter['items'][0]['lesson_id'],self.lesson_id)
         self.assertEqual(self.listing(from_date='2026-10-18',to_date='2026-10-17').status_code,422)
         self.assertEqual(self.listing(missing='invalid').status_code,422)
+
+    def test_combined_missing_filters_respect_text_and_file_only_materials(self):
+        empty=self.seed_lesson(self.id,self.start-86400,'completed')
+        notes_only=self.seed_lesson(self.id,self.start-2*86400,'completed')
+        with database() as (c,p):
+            c.execute("INSERT INTO lesson_materials (lesson_id,homework,notes,due_mode,version,updated_at,updated_by) VALUES (?,'','Конспект','next',1,0,?)",(notes_only,self.admin_id))
+        self.assertEqual(self.upload('homework').status_code,201)
+        any_missing=self.listing(missing='any').json()
+        self.assertEqual(any_missing['total'],3)
+        both=self.listing(missing='both').json()
+        self.assertEqual(both['total'],1);self.assertEqual(both['items'][0]['lesson_id'],empty)
+        self.assertEqual(self.upload('notes').status_code,201)
+        any_missing=self.listing(missing='any',limit=1).json()
+        self.assertEqual(any_missing['total'],2);self.assertEqual(len(any_missing['items']),1)
+        self.assertNotIn(self.lesson_id,[r['lesson_id'] for r in self.listing(missing='any').json()['items']])

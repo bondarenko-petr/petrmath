@@ -65,7 +65,7 @@ def describe(c,p,row):
 
 @router.get('')
 def list_materials(response:Response,student_id:int|None=Query(None,gt=0),lesson_id:int|None=Query(None,gt=0),
-                   limit:int=Query(20,ge=1,le=100),offset:int=Query(0,ge=0),content:Category|None=Query(None),missing:Literal['homework','notes']|None=Query(None),from_date:date|None=None,to_date:date|None=None,user=Depends(member)):
+                   limit:int=Query(20,ge=1,le=100),offset:int=Query(0,ge=0),content:Category|None=Query(None),missing:Literal['homework','notes','any','both']|None=Query(None),from_date:date|None=None,to_date:date|None=None,user=Depends(member)):
     if from_date and to_date and from_date>to_date:
         raise HTTPException(422,'Начало периода должно быть не позже конца')
     display_zone=zone(settings(user)['timezone'])
@@ -82,8 +82,12 @@ def list_materials(response:Response,student_id:int|None=Query(None,gt=0),lesson
             condition+=f" AND (EXISTS (SELECT 1 FROM lesson_materials m WHERE m.lesson_id=l.id AND m.{content}!='') OR EXISTS (SELECT 1 FROM material_files f WHERE f.lesson_id=l.id AND f.category={p} AND f.deleted_at IS NULL))"
             args.append(content)
         if missing:
-            condition+=f" AND NOT EXISTS (SELECT 1 FROM lesson_materials m WHERE m.lesson_id=l.id AND m.{missing}!='') AND NOT EXISTS (SELECT 1 FROM material_files f WHERE f.lesson_id=l.id AND f.category={p} AND f.deleted_at IS NULL)"
-            args.append(missing)
+            categories=['homework','notes'] if missing in ('any','both') else [missing]
+            checks=[]
+            for category in categories:
+                checks.append(f"(NOT EXISTS (SELECT 1 FROM lesson_materials m WHERE m.lesson_id=l.id AND m.{category}!='') AND NOT EXISTS (SELECT 1 FROM material_files f WHERE f.lesson_id=l.id AND f.category={p} AND f.deleted_at IS NULL))")
+                args.append(category)
+            condition+=' AND ('+(' OR ' if missing=='any' else ' AND ').join(checks)+')'
         if from_date:
             condition+=f' AND l.starts_at>={p}';args.append(int(datetime.combine(from_date,datetime.min.time(),tzinfo=display_zone).timestamp()))
         if to_date:
