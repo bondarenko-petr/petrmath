@@ -11,7 +11,7 @@ from threading import Lock
 
 import mysql.connector
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from database import ROOT
 
 router = APIRouter(prefix='/api/auth', tags=['Account'])
@@ -158,13 +158,15 @@ def profile(request: Request, response: Response):
     if not token:
         raise HTTPException(401, 'Войдите в аккаунт')
     with database() as (cursor, p):
-        cursor.execute(f'SELECT u.id,u.name,u.email,u.username,u.role,u.must_change_password FROM users u JOIN sessions s ON u.id=s.user_id WHERE s.token_hash={p} AND s.expires_at>{p} AND u.is_active=1',
+        cursor.execute(f"SELECT u.id,u.name,u.email,u.username,u.role,u.must_change_password,COALESCE(sp.phone,'') AS phone,sp.timezone FROM users u LEFT JOIN student_profiles sp ON sp.user_id=u.id JOIN sessions s ON u.id=s.user_id WHERE s.token_hash={p} AND s.expires_at>{p} AND u.is_active=1",
                        (hashlib.sha256(token.encode()).hexdigest(), int(time.time())))
         user = cursor.fetchone()
     if not user:
         raise HTTPException(401, 'Сессия истекла. Войдите снова.')
     response.headers['Cache-Control'] = 'no-store'
-    return dict(user)
+    result=dict(user)
+    result['effective_timezone']=result['timezone'] or os.environ.get('LESSON_TIMEZONE','Europe/Moscow')
+    return result
 
 
 @router.post('/logout')
@@ -203,3 +205,44 @@ def change_password(data: PasswordChange, request: Request, response: Response):
         cursor.execute(f'DELETE FROM sessions WHERE user_id={p}', (user['id'],))
         session(cursor, p, user['id'], request, response)
     return {'status':'password_changed'}
+
+
+class StudentProfileEdit(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    email: EmailStr | None = Field(default=None,max_length=254)
+    phone: str = Field(default='',max_length=40)
+    timezone: str | None = Field(default=None,max_length=100)
+
+    @field_validator('phone',mode='before')
+    @classmethod
+    def clean_phone(cls,value):
+        return value.strip() if isinstance(value,str) else value
+
+    @field_validator('timezone')
+    @classmethod
+    def valid_timezone(cls,value):
+        from student_timezones import validate_zone
+        return validate_zone(value)
+
+
+@router.post('/profile')
+def edit_own_student_profile(data:StudentProfileEdit,request:Request,response:Response):
+    guard(request)
+    user=profile(request,response)
+    if user['role']!='student' or user['must_change_password']:
+        raise HTTPException(403,'Редактирование доступно ученику после смены временного пароля')
+    try:
+        with database() as (c,p):
+            if p=='?':c.execute('BEGIN IMMEDIATE')
+            c.execute(f"SELECT id FROM users WHERE id={p} AND role='student' AND is_active=1"+(' FOR UPDATE' if p!='?' else ''),(user['id'],))
+            if not c.fetchone():raise HTTPException(409,'Аккаунт изменился. Войдите снова.')
+            c.execute(f'UPDATE users SET email={p} WHERE id={p}',(str(data.email).lower() if data.email else None,user['id']))
+            c.execute(f'SELECT user_id FROM student_profiles WHERE user_id={p}',(user['id'],))
+            if c.fetchone():
+                c.execute(f'UPDATE student_profiles SET phone={p},timezone={p} WHERE user_id={p}',(data.phone,data.timezone,user['id']))
+            else:
+                c.execute(f'INSERT INTO student_profiles (user_id,phone,timezone,default_duration_minutes) VALUES ({p},{p},{p},45)',(user['id'],data.phone,data.timezone))
+    except (sqlite3.IntegrityError,mysql.connector.IntegrityError):
+        raise HTTPException(409,'Этот email уже используется другим аккаунтом')
+    response.headers['Cache-Control']='no-store'
+    return {'status':'updated'}
