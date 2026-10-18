@@ -65,7 +65,7 @@ async function load() {
     const result = await get(`admin/${section}?${params}`);
     document.querySelector('#trial-controls').hidden=section!=='trial-requests';document.querySelector('#student-controls').hidden=section!=='students';items.classList.toggle('trial-list',section==='trial-requests');items.classList.toggle('student-list',section==='students');
     if(section==='trial-requests'){document.querySelector('#trial-active').textContent='В работе ('+result.active_total+')';document.querySelector('#trial-archive').textContent='Архив ('+result.archive_total+')';document.querySelector('#trial-new-count').textContent='Новых: '+result.counts.new;document.querySelector('#trial-active').setAttribute('aria-pressed',String(trialView==='active'));document.querySelector('#trial-archive').setAttribute('aria-pressed',String(trialView==='archive'));}
-    document.querySelector('#dashboard').hidden = false;
+    document.querySelector('#dashboard').hidden = false;window.mountAdminNavigation(section==='students'?'students':'requests');
 
     document.querySelector('#create-student').hidden = section !== 'students';
     document.querySelector('#list-title').textContent = section === 'students' ? 'Зарегистрированные ученики' : 'Заявки на пробный урок';
@@ -81,7 +81,7 @@ async function load() {
 }
 function choose(value) {
   if(busy||trialSaving)return;
-  section=value; offset=0;
+  section=value; offset=0;window.mountAdminNavigation(value==='overview'?'calendar':value==='students'?'students':'requests');
   document.querySelector('#overview').hidden=value!=='overview';document.querySelector('#management').hidden=value==='overview';document.querySelector('#student-editor').hidden=true;clearCredentials();
   document.querySelector('#requests-tab').setAttribute('aria-pressed',String(section === 'trial-requests'));
   document.querySelector('#students-tab').setAttribute('aria-pressed',String(section === 'students'));
@@ -96,8 +96,8 @@ document.querySelector('#admin-refresh').onclick=()=>load();
 const requestedSection=new URLSearchParams(window.location.search).get('section');if(['students','trial-requests'].includes(requestedSection)){section=requestedSection;document.querySelector('#overview').hidden=true;document.querySelector('#management').hidden=false;document.querySelector('#students-tab').setAttribute('aria-pressed',String(section==='students'));document.querySelector('#requests-tab').setAttribute('aria-pressed',String(section==='trial-requests'))}
 load();
 
-document.querySelectorAll('[data-admin-section]').forEach(link=>link.addEventListener('click',()=>choose(link.dataset.adminSection)));
-document.querySelector('a[href="#admin-homework"]').addEventListener('click',()=>choose('overview'));
+window.addEventListener('admin-navigate',event=>choose(event.detail));
+
 
 let editing=null;
 const studentForm=document.querySelector('#student-form');
@@ -132,7 +132,7 @@ document.querySelector('#send-credentials').onclick=async()=>{
 
 async function loadOverview(){
  busy=true;status.textContent='Проверяем доступ…';
- try{const user=await get('auth/me');if(user.role!=='admin'||user.must_change_password){const error=new Error('Для доступа войдите как администратор и смените временный пароль при необходимости.');error.status=403;throw error}document.querySelector('#dashboard').hidden=false;status.textContent='';const target=document.querySelector('#recent-materials');target.textContent='Загружаем проведённые уроки…';
+ try{const user=await get('auth/me');if(user.role!=='admin'||user.must_change_password){const error=new Error('Для доступа войдите как администратор и смените временный пароль при необходимости.');error.status=403;throw error}document.querySelector('#dashboard').hidden=false;window.mountAdminNavigation('calendar');status.textContent='';const target=document.querySelector('#recent-materials');target.textContent='Загружаем проведённые уроки…';
  try{const data=await get('materials?limit=5');target.replaceChildren();let tz='Europe/Berlin';try{tz=localStorage.getItem('krug-pi-primary-zone')||tz;new Intl.DateTimeFormat('ru-RU',{timeZone:tz})}catch{tz='Europe/Berlin'}for(const row of data.items){const card=trialElement('article',undefined,'home-material-card');card.append(trialElement('h3',row.student_name+' · '+(row.topic||'Математика')),trialElement('p',new Date(row.starts_at).toLocaleString('ru-RU',{timeZone:tz,dateStyle:'short',timeStyle:'short'})+' · '+tz,'muted small'));const homeworkFiles=row.files.filter(f=>f.category==='homework').length,notesFiles=row.files.filter(f=>f.category==='notes').length;card.append(trialElement('p','Домашнее задание: '+(row.homework||homeworkFiles?'добавлено':'не добавлено')+' · Конспект: '+(row.notes||notesFiles?'добавлен':'не добавлен')));const link=trialElement('a','Открыть и редактировать материалы →');link.href='materials.html?lesson_id='+row.lesson_id+'&student_id='+row.student_id;card.append(link);target.append(card)}if(!data.items.length)target.textContent='Проведённых уроков пока нет. После занятия отметьте его проведённым в календаре.'}catch{target.textContent='Не удалось загрузить материалы. Откройте раздел «Все материалы».'}
  }catch(error){status.textContent=error.message;document.querySelector('#dashboard').hidden=true}finally{busy=false}
 }
