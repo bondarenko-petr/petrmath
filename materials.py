@@ -3,7 +3,7 @@ import os
 import json
 import re
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -15,7 +15,7 @@ from starlette.formparsers import MultiPartException
 from accounts import database, guard
 from admin import require_admin
 from database import ROOT
-from lessons import member, zone
+from lessons import member, zone, settings
 
 router=APIRouter(prefix='/api/materials',tags=['Lesson materials'])
 MAX_FILE_SIZE=10*1024*1024
@@ -65,7 +65,10 @@ def describe(c,p,row):
 
 @router.get('')
 def list_materials(response:Response,student_id:int|None=Query(None,gt=0),lesson_id:int|None=Query(None,gt=0),
-                   limit:int=Query(20,ge=1,le=100),offset:int=Query(0,ge=0),content:Category|None=Query(None),user=Depends(member)):
+                   limit:int=Query(20,ge=1,le=100),offset:int=Query(0,ge=0),content:Category|None=Query(None),missing:Literal['homework','notes']|None=Query(None),from_date:date|None=None,to_date:date|None=None,user=Depends(member)):
+    if from_date and to_date and from_date>to_date:
+        raise HTTPException(422,'Начало периода должно быть не позже конца')
+    display_zone=zone(settings(user)['timezone'])
     with database() as (c,p):
         if p=='?': c.execute('BEGIN')
         condition="l.status='completed'";args=[]
@@ -78,6 +81,13 @@ def list_materials(response:Response,student_id:int|None=Query(None,gt=0),lesson
             # Column names come exclusively from the Literal category above.
             condition+=f" AND (EXISTS (SELECT 1 FROM lesson_materials m WHERE m.lesson_id=l.id AND m.{content}!='') OR EXISTS (SELECT 1 FROM material_files f WHERE f.lesson_id=l.id AND f.category={p} AND f.deleted_at IS NULL))"
             args.append(content)
+        if missing:
+            condition+=f" AND NOT EXISTS (SELECT 1 FROM lesson_materials m WHERE m.lesson_id=l.id AND m.{missing}!='') AND NOT EXISTS (SELECT 1 FROM material_files f WHERE f.lesson_id=l.id AND f.category={p} AND f.deleted_at IS NULL)"
+            args.append(missing)
+        if from_date:
+            condition+=f' AND l.starts_at>={p}';args.append(int(datetime.combine(from_date,datetime.min.time(),tzinfo=display_zone).timestamp()))
+        if to_date:
+            condition+=f' AND l.starts_at<{p}';args.append(int(datetime.combine(to_date+timedelta(days=1),datetime.min.time(),tzinfo=display_zone).timestamp()))
         c.execute('SELECT COUNT(*) AS total FROM lessons l WHERE '+condition,tuple(args))
         total=int(c.fetchone()['total'])
         c.execute('SELECT l.*,u.name AS student_name FROM lessons l JOIN users u ON u.id=l.student_id WHERE '+condition+f' ORDER BY l.starts_at DESC,l.id DESC LIMIT {p} OFFSET {p}',(*args,limit,offset))

@@ -139,3 +139,17 @@ class MaterialsTests(unittest.TestCase):
         for path in self.folder.iterdir():path.unlink()
         response=self.client.get('/api/materials/files/'+file_id)
         self.assertEqual(response.status_code,404)
+
+    def test_compact_filters_include_file_only_materials_and_count_all_pages(self):
+        other=self.seed_lesson(self.id,self.start-86400,'completed')
+        self.assertEqual(self.listing(missing='homework').json()['total'],2)
+        self.assertEqual(self.upload('homework').status_code,201)
+        result=self.listing(missing='homework',limit=1).json()
+        self.assertEqual(result['total'],1);self.assertEqual(result['items'][0]['lesson_id'],other)
+        self.assertEqual(self.listing(missing='notes').json()['total'],2)
+        self.assertEqual(self.save().status_code,200)
+        self.assertEqual(self.listing(missing='notes').json()['total'],1)
+        date_filter=self.listing(from_date='2026-10-17',to_date='2026-10-17').json()
+        self.assertEqual(date_filter['total'],1);self.assertEqual(date_filter['items'][0]['lesson_id'],self.lesson_id)
+        self.assertEqual(self.listing(from_date='2026-10-18',to_date='2026-10-17').status_code,422)
+        self.assertEqual(self.listing(missing='invalid').status_code,422)
