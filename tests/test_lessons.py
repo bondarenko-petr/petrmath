@@ -172,3 +172,19 @@ class LessonTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/lessons',params=params).json()['total'],1)
         row=self.client.get('/api/lessons').json()['items'][0]
         self.assertEqual(row['starts_at'],'2027-01-04T22:30:00+00:00')
+
+    def test_cancellation_preserves_history_balance_and_restoration_checks_conflict(self):
+        lesson_id=self.create().json()['ids'][0]
+        before=self.client.get('/api/finance/balance',params={'student_id':self.id}).json()['student']['balance_kopecks']
+        cancelled=self.client.patch('/api/lessons/'+str(lesson_id)+'/status',json={'status':'cancelled'},headers=self.headers)
+        self.assertEqual(cancelled.status_code,200,cancelled.text)
+        rows=self.client.get('/api/lessons').json()['items']
+        self.assertEqual(rows[0]['status'],'cancelled')
+        self.assertEqual(self.client.get('/api/finance/balance',params={'student_id':self.id}).json()['student']['balance_kopecks'],before)
+        replacement=self.create();self.assertEqual(replacement.status_code,201,replacement.text)
+        restore=self.client.patch('/api/lessons/'+str(lesson_id)+'/status',json={'status':'scheduled'},headers=self.headers)
+        self.assertEqual(restore.status_code,409)
+        self.post('logout',{});self.post('login',self.data)
+        forbidden=self.client.patch('/api/lessons/'+str(lesson_id)+'/status',json={'status':'cancelled'},headers=self.headers)
+        self.assertEqual(forbidden.status_code,403)
+        self.assertTrue(any(row['id']==lesson_id and row['status']=='cancelled' for row in self.client.get('/api/lessons').json()['items']))
