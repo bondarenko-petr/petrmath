@@ -3,7 +3,7 @@ const status = document.querySelector('#admin-status');
 const items = document.querySelector('#items');
 let section = 'overview', offset = 0, busy = false;
 const limit = 20;
-let studentSearch='',studentView='all',studentSort='name';
+let studentSearch='',studentView='all',studentSort='name',studentArchive=new URLSearchParams(location.search).get('archive')==='true';
 const studentFilters=document.querySelector('#student-filters');
 studentFilters.onsubmit=event=>{event.preventDefault();if(busy||trialSaving)return;studentSearch=studentFilters.elements.search.value.trim();studentView=studentFilters.elements.view.value;studentSort=studentFilters.elements.sort.value;offset=0;load()};
 document.querySelector('#student-reset').onclick=()=>{if(busy||trialSaving)return;studentFilters.reset();studentSearch='';studentView='all';studentSort='name';offset=0;load()};
@@ -39,7 +39,7 @@ function renderStudentTable(rows){
  for(const row of rows){const tr=document.createElement('tr');const values=[row.name,row.username,row.school_grade??'—',rub(row.default_price_kopecks),rub(row.balance_kopecks),row.is_active?'Активен':'В архиве'];values.forEach((value,i)=>{const td=trialElement('td',value);if(i===3||i===4)td.className='student-money';if(i===4&&row.debt_kopecks>0){td.classList.add('student-debt');td.append(trialElement('span','Задолженность','student-debt-label'))}tr.append(td)});
  const actions=document.createElement('td');actions.className='student-table-actions';const topup=trialElement('button','Пополнить баланс');topup.type='button';topup.onclick=()=>window.openAdminPayment(row.id);actions.append(topup);const link=trialElement('a','История операций');link.href='finance.html?student_id='+encodeURIComponent(row.id);link.setAttribute('aria-label','Оплаты: '+row.name);actions.append(link);const materials=trialElement('a','Материалы');materials.href='materials.html?student_id='+row.id;materials.setAttribute('aria-label','Материалы: '+row.name);actions.append(materials);
  const edit=trialElement('button','Редактировать');edit.type='button';edit.onclick=()=>editStudent(row);actions.append(edit);
- const more=document.createElement('details'),summary=trialElement('summary','Ещё');more.append(summary);for(const [label,handler] of [['Сбросить пароль',()=>resetPassword(row)],[row.is_active?'Архивировать':'Восстановить',()=>toggleActive(row)]]){const b=trialElement('button',label);b.type='button';b.onclick=handler;more.append(b)}actions.append(more);tr.append(actions);body.append(tr)}
+ const more=document.createElement('details'),summary=trialElement('summary','Ещё');more.append(summary);for(const [label,handler] of [['Сбросить пароль',()=>resetPassword(row)],[row.is_active?'Архивировать':'Восстановить',()=>toggleActive(row)]]){const b=trialElement('button',label);b.type='button';b.onclick=handler;more.append(b)}if(!row.is_active){const remove=trialElement('button','Удалить навсегда','student-delete-button');remove.type='button';remove.onclick=()=>deleteStudentDialog(row);more.append(remove)}actions.append(more);tr.append(actions);body.append(tr)}
  table.append(body);wrapper.append(table);if(!rows.length)wrapper.append(trialElement('p','Ученики не найдены. Измените поиск или фильтр.','muted'));return wrapper;
 }
 
@@ -61,7 +61,7 @@ async function load() {
   document.querySelectorAll('#management button').forEach(button => button.disabled = true);
   try {
     const params=new URLSearchParams({limit,offset});if(section==='trial-requests'){params.set('view',trialView);params.set('search',trialSearch);if(trialStatus)params.set('status',trialStatus)}
-    if(section==='students'){params.set('include_finance','true');params.set('search',studentSearch);params.set('view',studentView);params.set('sort',studentSort)}
+    if(section==='students'){params.set('archive',String(studentArchive));params.set('include_finance','true');params.set('search',studentSearch);params.set('view',studentView);params.set('sort',studentSort)}
     const result = await get(`admin/${section}?${params}`);
     document.querySelector('#trial-controls').hidden=section!=='trial-requests';document.querySelector('#student-controls').hidden=section!=='students';items.classList.toggle('trial-list',section==='trial-requests');items.classList.toggle('student-list',section==='students');
     if(section==='trial-requests'){document.querySelector('#trial-active').textContent='В работе ('+result.active_total+')';document.querySelector('#trial-archive').textContent='Архив ('+result.archive_total+')';document.querySelector('#trial-new-count').textContent='Новых: '+result.counts.new;document.querySelector('#trial-active').setAttribute('aria-pressed',String(trialView==='active'));document.querySelector('#trial-archive').setAttribute('aria-pressed',String(trialView==='archive'));}
@@ -70,7 +70,7 @@ async function load() {
     document.querySelector('#create-student').hidden = section !== 'students';
     document.querySelector('#list-title').textContent = section === 'students' ? 'Зарегистрированные ученики' : 'Заявки на пробный урок';
     document.querySelector('#count').textContent = `Всего: ${result.total}. Показано: ${result.items.length}.`;
-    if(section==='students')items.append(renderStudentTable(result.items));else for(const row of result.items)items.append(renderTrialRequest(row));
+    if(section==='students'){document.querySelector('#students-active').textContent='Активные ('+result.counts.active+')';document.querySelector('#students-archive').textContent='Архив ('+result.counts.archive+')';document.querySelector('#students-active').setAttribute('aria-pressed',String(!studentArchive));document.querySelector('#students-archive').setAttribute('aria-pressed',String(studentArchive));document.querySelector('#list-title').textContent=studentArchive?'Архив учеников':'Активные ученики';items.append(renderStudentTable(result.items));}else for(const row of result.items)items.append(renderTrialRequest(row));
     status.textContent = result.items.length ? '' : 'Пока записей нет.';
     document.querySelectorAll('#management button').forEach(button => button.disabled = false);
     document.querySelector('#prev').disabled = offset === 0;
@@ -119,7 +119,8 @@ studentForm.addEventListener('submit',async event=>{
  try{const result=await mutate('students'+(editing?'/'+editing:''),editing?'PUT':'POST',data);document.querySelector('#student-editor').hidden=true;studentForm.reset();offset=0;await load();status.textContent='Данные ученика сохранены. Новая цена применяется к новым занятиям.';if(result.temporary_password)showCredentials(result);}catch(error){studentFormStatus.textContent=error.message;}finally{button.disabled=false;}
 });
 async function resetPassword(row){if(!confirm('Сбросить пароль ученика '+row.name+'? Старые сессии будут завершены.'))return;clearCredentials();try{const data=await mutate('students/'+row.id+'/reset-password','POST',{});showCredentials(data);}catch(error){status.textContent=error.message;}}
-async function toggleActive(row){if(!confirm((row.is_active?'Архивировать':'Восстановить')+' ученика '+row.name+'?'))return;clearCredentials();try{await mutate('students/'+row.id+'/active','PATCH',{is_active:!row.is_active});await load();}catch(error){status.textContent=error.message;}}
+async function toggleActive(row){if(busy||trialSaving)return;clearCredentials();try{let message='Восстановить ученика '+row.name+' и разрешить ему вход?';if(row.is_active){const info=await get('admin/students/'+row.id+'/deletion-preview');message='Перенести '+row.name+' в архив? Вход будет отключён; история и баланс сохранятся.';if(info.future_lessons)message+=' Есть будущие занятия: '+info.future_lessons+'. Они НЕ будут отменены. При необходимости отмените их отдельно в календаре.'}if(!confirm(message))return;await mutate('students/'+row.id+'/active','PATCH',{is_active:!row.is_active});offset=0;await load();}catch(error){status.textContent=error.message;}}
+
 
 document.querySelector('#send-credentials').onclick=async()=>{
  const data=issuedCredentials;if(!data)return;
@@ -138,3 +139,13 @@ async function loadOverview(){
 }
 
 window.addEventListener('admin-payment-saved',()=>{if(section==='students')void load()});
+
+function chooseStudentArchive(archive){if(busy||trialSaving)return;studentArchive=archive;offset=0;const url=new URL(location.href);url.searchParams.set('archive',String(archive));history.replaceState(null,'',url);void load()}
+document.querySelector('#students-active').onclick=()=>chooseStudentArchive(false);document.querySelector('#students-archive').onclick=()=>chooseStudentArchive(true);
+async function deleteStudentDialog(row){
+ if(busy||trialSaving||document.querySelector('#student-delete-dialog'))return;
+ const dialog=trialElement('dialog',undefined,'student-delete-dialog');dialog.id='student-delete-dialog';const title=trialElement('h2','Удалить ученика навсегда');title.id='student-delete-title';dialog.setAttribute('aria-labelledby',title.id);const body=trialElement('div','Загружаем данные…'),feedback=trialElement('p');feedback.setAttribute('role','status');const close=trialElement('button','Отмена');close.type='button';let saving=false;close.onclick=()=>dialog.close();dialog.append(title,body,feedback,close);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());dialog.addEventListener('cancel',event=>{if(saving)event.preventDefault()});dialog.showModal();
+ try{const info=await get('admin/students/'+row.id+'/deletion-preview');if(!dialog.open)return;if(info.is_active)throw Error('Сначала перенесите ученика в архив.');body.replaceChildren(trialElement('p',info.name+' · '+info.username));const list=trialElement('dl');for(const [label,value] of [['Занятий',info.lessons],['Будущих занятий',info.future_lessons],['Оплат',info.payments],['Записей с материалами',info.materials],['Файлов (включая убранные)',info.files],['Баланс',(info.balance_kopecks/100).toLocaleString('ru-RU',{minimumFractionDigits:2})+' ₽']])addField(list,label,value);body.append(list,trialElement('p','Будут удалены аккаунт, контакты, занятия, оплаты, задания, конспекты и файлы. Финансовая история изменится. Восстановления через кабинет нет.','student-delete-warning'));
+ const form=trialElement('form'),label=trialElement('label','Для подтверждения введите логин: '+info.username),input=trialElement('input');input.type='text';input.required=true;input.autocomplete='off';input.maxLength=254;label.append(input);const submit=trialElement('button','Удалить навсегда','student-delete-button');submit.type='submit';submit.disabled=true;input.oninput=()=>submit.disabled=input.value!==info.username;form.append(label,submit);body.append(form);input.focus();form.onsubmit=async event=>{event.preventDefault();if(saving||busy||input.value!==info.username)return;saving=true;busy=true;close.disabled=input.disabled=submit.disabled=true;feedback.textContent='Удаляем…';try{const result=await mutate('students/'+row.id,'DELETE',{username:input.value});dialog.close();busy=false;offset=0;await load();status.textContent=result.file_cleanup_pending?'Ученик удалён из базы. Часть файлов ожидает очистки хранилища администратором.':'Ученик и связанные данные удалены навсегда.'}catch(e){feedback.textContent=e.message}finally{saving=false;busy=false;close.disabled=input.disabled=false;submit.disabled=input.value!==info.username}};
+ }catch(e){feedback.textContent=e.message}
+}
