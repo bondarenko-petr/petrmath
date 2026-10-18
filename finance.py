@@ -1,5 +1,7 @@
 """Manual payments and balances derived from payments and completed lessons."""
 import time
+from datetime import date
+from typing import Literal
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
@@ -123,3 +125,52 @@ def void_payment(payment_id:int, data:VoidInput, request:Request, response:Respo
                 (int(time.time()),user['id'],data.reason,payment_id))
     response.headers['Cache-Control']='no-store'
     return {'status':'voided'}
+
+
+@router.get('/report')
+def financial_report(response:Response,from_date:date|None=None,to_date:date|None=None,
+                     search:str=Query('',max_length=200),debt_only:bool=False,
+                     state:Literal['all','active','archive']='all',
+                     limit:int=Query(50,ge=1,le=100),offset:int=Query(0,ge=0),user=Depends(require_admin)):
+    from datetime import datetime,timedelta
+    from lessons import settings,zone
+    tz=zone(settings(user)['timezone']);today=datetime.now(tz).date()
+    first=from_date or today.replace(day=1);last=to_date or today
+    if first>last:raise HTTPException(422,'Начало периода должно быть не позже конца')
+    if last==date.max:raise HTTPException(422,'Выберите дату окончания раньше 31.12.9999')
+    start=int(datetime.combine(first,datetime.min.time(),tzinfo=tz).timestamp())
+    end=int(datetime.combine(last+timedelta(days=1),datetime.min.time(),tzinfo=tz).timestamp())
+    with database() as (c,p):
+        if p=='?':c.execute('BEGIN')
+        source=f''' FROM (SELECT u.id,u.name,u.username,u.is_active,
+          COALESCE(pa.received,0) AS received_kopecks,COALESCE(sp.earned,0) AS earned_kopecks,
+          COALESCE(sp.completed,0) AS completed_lessons,
+          CAST(COALESCE(pa.paid,0) AS SIGNED)-CAST(COALESCE(sp.spent,0) AS SIGNED) AS balance_kopecks
+          FROM users u
+          LEFT JOIN (SELECT student_id,SUM(amount_kopecks) AS paid,
+             SUM(CASE WHEN created_at>={p} AND created_at<{p} THEN amount_kopecks ELSE 0 END) AS received
+             FROM payments WHERE voided_at IS NULL GROUP BY student_id) pa ON pa.student_id=u.id
+          LEFT JOIN (SELECT student_id,SUM(price_kopecks) AS spent,
+             SUM(CASE WHEN ends_at>={p} AND ends_at<{p} THEN price_kopecks ELSE 0 END) AS earned,
+             SUM(CASE WHEN ends_at>={p} AND ends_at<{p} THEN 1 ELSE 0 END) AS completed
+             FROM lessons WHERE status='completed' GROUP BY student_id) sp ON sp.student_id=u.id
+          WHERE u.role='student') report'''
+        args=[start,end,start,end,start,end]
+        c.execute('SELECT COALESCE(SUM(received_kopecks),0) AS received_kopecks,COALESCE(SUM(earned_kopecks),0) AS earned_kopecks,COALESCE(SUM(completed_lessons),0) AS completed_lessons,COALESCE(SUM(CASE WHEN balance_kopecks<0 THEN -balance_kopecks ELSE 0 END),0) AS debt_kopecks,COALESCE(SUM(CASE WHEN balance_kopecks<0 THEN 1 ELSE 0 END),0) AS debtors_count'+source,tuple(args))
+        totals={key:int(value) for key,value in dict(c.fetchone()).items()}
+        clauses=['1=1']
+        if debt_only:clauses.append('balance_kopecks<0')
+        if state!='all':clauses.append('is_active='+('1' if state=='active' else '0'))
+        if search.strip():
+            pattern='%'+search.strip().replace('!','!!').replace('%','!%').replace('_','!_')+'%'
+            clauses.append(f"(name LIKE {p} ESCAPE '!' OR username LIKE {p} ESCAPE '!')");args.extend([pattern,pattern])
+        where=' WHERE '+' AND '.join(clauses)
+        c.execute('SELECT COUNT(*) AS total'+source+where,tuple(args));total=int(c.fetchone()['total'])
+        c.execute('SELECT *'+source+where+f' ORDER BY balance_kopecks ASC,name,id LIMIT {p} OFFSET {p}',(*args,limit,offset))
+        items=[]
+        for row in c.fetchall():
+            row=dict(row)
+            for key in ['received_kopecks','earned_kopecks','completed_lessons','balance_kopecks']:row[key]=int(row[key])
+            row['debt_kopecks']=max(-row['balance_kopecks'],0);items.append(row)
+    response.headers['Cache-Control']='no-store'
+    return {'from_date':first.isoformat(),'to_date':last.isoformat(),'timezone':str(tz),'totals':totals,'items':items,'total':total,'limit':limit,'offset':offset}

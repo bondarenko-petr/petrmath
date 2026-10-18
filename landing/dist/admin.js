@@ -1,3 +1,4 @@
+let calendarFocusPending=false;
 let issuedCredentials=null;
 const status = document.querySelector('#admin-status');
 const items = document.querySelector('#items');
@@ -133,7 +134,7 @@ document.querySelector('#send-credentials').onclick=async()=>{
 
 async function loadOverview(){
  busy=true;status.textContent='Проверяем доступ…';
- try{const user=await get('auth/me');if(user.role!=='admin'||user.must_change_password){const error=new Error('Для доступа войдите как администратор и смените временный пароль при необходимости.');error.status=403;throw error}document.querySelector('#dashboard').hidden=false;window.mountAdminNavigation('calendar');status.textContent='';
+ try{const user=await get('auth/me');if(user.role!=='admin'||user.must_change_password){const error=new Error('Для доступа войдите как администратор и смените временный пароль при необходимости.');error.status=403;throw error}document.querySelector('#dashboard').hidden=false;window.mountAdminNavigation('calendar');status.textContent='';calendarFocusPending=true;window.dispatchEvent(new Event('schedule-show-week'));focusCalendarOnOpen();
  }catch(error){status.textContent=error.message;document.querySelector('#dashboard').hidden=true}finally{busy=false}
 }
 
@@ -148,3 +149,6 @@ async function deleteStudentDialog(row){
  const form=trialElement('form'),label=trialElement('label','Для подтверждения введите логин: '+info.username),input=trialElement('input');input.type='text';input.required=true;input.autocomplete='off';input.maxLength=254;label.append(input);const submit=trialElement('button','Удалить навсегда','student-delete-button');submit.type='submit';submit.disabled=true;input.oninput=()=>submit.disabled=input.value!==info.username;form.append(label,submit);body.append(form);input.focus();form.onsubmit=async event=>{event.preventDefault();if(saving||busy||input.value!==info.username)return;saving=true;busy=true;close.disabled=input.disabled=submit.disabled=true;feedback.textContent='Удаляем…';try{const result=await mutate('students/'+row.id,'DELETE',{username:input.value});dialog.close();busy=false;offset=0;await load();status.textContent=result.file_cleanup_pending?'Ученик удалён из базы. Часть файлов ожидает очистки хранилища администратором.':'Ученик и связанные данные удалены навсегда.'}catch(e){feedback.textContent=e.message}finally{saving=false;busy=false;close.disabled=input.disabled=false;submit.disabled=input.value!==info.username}};
  }catch(e){feedback.textContent=e.message}
 }
+
+function focusCalendarOnOpen(){if(!calendarFocusPending||document.querySelector('#overview').hidden)return;const host=document.querySelector('[data-schedule-root]');if(host?.dataset.calendarReady!=='true')return;requestAnimationFrame(()=>{if(!calendarFocusPending||document.querySelector('#overview').hidden)return;const target=document.querySelector('#weekly-view');if(target.hidden)return;window.scrollTo({top:Math.max(0,target.getBoundingClientRect().top+window.scrollY-24),behavior:'auto'});calendarFocusPending=false;});}
+window.addEventListener('schedule-ready',focusCalendarOnOpen);
