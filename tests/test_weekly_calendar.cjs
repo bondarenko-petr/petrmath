@@ -184,3 +184,9 @@ test('admin compact window matches 12:00–20:00 example and keeps current time 
  const range=calendar.adminWindow(rows,'2099-01-05','UTC','2099-01-05T13:00:00Z');assert.equal(range.startMinute,720);assert.equal(range.endMinute,1200);
  const late=calendar.adminWindow(rows,'2099-01-05','UTC','2099-01-05T23:00:00Z');assert.equal(late.endMinute,1440);
 });
+
+test('lesson-only student window uses half-hour margins independent of current time',()=>{
+ const rows=[lesson(1,'2099-01-05T15:00:00Z','2099-01-05T18:45:00Z')];
+ const range=calendar.studentWindow('lessons',rows,'2099-01-05','UTC','2099-01-05T01:00:00Z');assert.equal(range.startMinute,870);assert.equal(range.endMinute,1155);
+ assert.equal(calendar.studentWindow('lessons',[],'2099-01-05','UTC'),null);
+});

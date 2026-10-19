@@ -1,5 +1,5 @@
 const form=document.querySelector('#auth-form'), status=document.querySelector('#status');
-let currentUser=null,profileScrollY=0,returnToProfile=false;
+let currentUser=null,profileScrollY=0,returnToProfile=false,profileNavigationOpened=false;
 const profileDialog=document.querySelector('#profile-dialog');
 async function api(path,data){
  const response=await fetch('/api/auth/'+path,data?{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'KrugPi'},body:JSON.stringify(data)}:{});
@@ -22,7 +22,7 @@ async function loadProfile(){
  document.querySelector('#profile-edit-form').hidden=true;document.querySelector('#profile-contact-email').textContent=currentUser.email||'Не указан';document.querySelector('#profile-phone').textContent=currentUser.phone||'Не указан';document.querySelector('#profile-parent-name').textContent=currentUser.parent_name||'Не указано';document.querySelector('#profile-parent-phone').textContent=currentUser.parent_phone||'Не указан';document.querySelector('#profile-timezone').textContent=currentUser.effective_timezone;
  document.querySelector('#profile-email').textContent=currentUser.username;document.querySelector('#profile-role').textContent=currentUser.role==='admin'?'Администратор':'Ученик';
  if(currentUser.role==='student'){void loadStudentCalendar();loadLessonSummary();loadFinanceSummary();loadMaterialsSummary();}
- document.querySelector('#admin-link').hidden=currentUser.role!=='admin';document.querySelectorAll('.student-content').forEach(e=>e.hidden=currentUser.role==='admin');
+ document.querySelector('#open-profile').hidden=false;document.querySelector('#admin-link').hidden=currentUser.role!=='admin';document.querySelectorAll('.student-content').forEach(e=>e.hidden=currentUser.role==='admin');if(currentUser.role==='student'){window.mountStudentNavigation('calendar');if(new URLSearchParams(location.search).get('profile')==='1'&&!profileNavigationOpened){profileNavigationOpened=true;document.querySelector('#open-profile').click()}}
 }
 form.addEventListener('submit',async event=>{event.preventDefault();const button=document.querySelector('#submit');button.disabled=true;status.textContent='Входим…';try{await api('login',{username:form.elements.username.value,password:form.elements.password.value});form.reset();await loadProfile();}catch(error){status.textContent=error.message;}finally{button.disabled=false;}});
 document.querySelector('#password-form').addEventListener('submit',async event=>{
@@ -36,7 +36,7 @@ loadProfile().catch(error=>{if(error.status!==401)status.textContent='Не уд�
 
 document.querySelector('#password-logout').onclick=()=>document.querySelector('#logout').onclick();
 
-function clearStudentDashboard(){document.querySelector('#profile-edit-form').hidden=true;document.querySelector('#profile-edit-form').reset();stopStudentCalendar();lessonSummaryGeneration++;financeSummaryGeneration++;materialsSummaryGeneration++;document.querySelectorAll('[data-next-lesson],[data-next-lessons],[data-week-lessons],[data-finance-summary],[data-homework-summary],[data-notes-summary]').forEach(e=>e.replaceChildren());}
+function clearStudentDashboard(){window.unmountStudentNavigation?.();document.querySelector('#profile-edit-form').hidden=true;document.querySelector('#profile-edit-form').reset();stopStudentCalendar();lessonSummaryGeneration++;financeSummaryGeneration++;materialsSummaryGeneration++;document.querySelectorAll('[data-next-lesson],[data-next-lessons],[data-week-lessons],[data-finance-summary],[data-homework-summary],[data-notes-summary]').forEach(e=>e.replaceChildren());}
 
 const profileEdit=document.querySelector('#profile-edit-form');
 document.querySelector('#edit-profile').onclick=()=>{
@@ -46,7 +46,7 @@ document.querySelector('#edit-profile').onclick=()=>{
 document.querySelector('#cancel-profile-edit').onclick=()=>{profileEdit.hidden=true;profileEdit.reset()};
 profileEdit.onsubmit=async event=>{event.preventDefault();const button=profileEdit.querySelector('[type=submit]'),feedback=document.querySelector('#profile-edit-status');button.disabled=true;feedback.textContent='Сохраняем…';try{await api('profile',{email:profileEdit.elements.email.value.trim()||null,phone:profileEdit.elements.phone.value,parent_name:profileEdit.elements.parent_name.value,parent_phone:profileEdit.elements.parent_phone.value,timezone:profileEdit.elements.timezone.value||null});await loadProfile();status.textContent='Профиль сохранён. Расписание обновлено в вашем часовом поясе.';document.querySelector('#profile-dialog-status').textContent='Профиль сохранён.'}catch(e){feedback.textContent=e.message}finally{button.disabled=false}};
 
-document.querySelector('#open-profile').onclick=()=>{if(!currentUser)return;profileScrollY=window.scrollY;document.querySelector('#profile-dialog-status').textContent='';profileDialog.showModal()};
+document.querySelector('#open-profile').onclick=()=>{if(!currentUser)return;profileScrollY=window.scrollY;document.querySelector('#profile-dialog-status').textContent='';profileDialog.showModal();window.setStudentNavActive?.('profile')};
 document.querySelector('#close-profile').onclick=()=>profileDialog.close();
-profileDialog.addEventListener('close',()=>{document.querySelector('#profile-edit-form').hidden=true;if(!returnToProfile)requestAnimationFrame(()=>window.scrollTo({top:profileScrollY,behavior:'auto'}))});
-function reopenProfileAfterPassword(message=''){if(!returnToProfile)return;returnToProfile=false;document.querySelector('#profile-dialog-status').textContent=message;profileDialog.showModal()}
+profileDialog.addEventListener('close',()=>{window.setStudentNavActive?.('calendar');document.querySelector('#profile-edit-form').hidden=true;if(!returnToProfile)requestAnimationFrame(()=>window.scrollTo({top:profileScrollY,behavior:'auto'}))});
+function reopenProfileAfterPassword(message=''){if(!returnToProfile)return;returnToProfile=false;document.querySelector('#profile-dialog-status').textContent=message;profileDialog.showModal();window.setStudentNavActive?.('profile')}

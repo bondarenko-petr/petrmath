@@ -16,6 +16,7 @@ const WeeklyCalendar=(()=>{
  function studentWindow(mode,rows,weekStart,timezone,value=new Date()){
   if(mode==='fixed')return {startMinute:480,endMinute:1440};
   const events=Array.from({length:7},(_,i)=>segments(rows,plus(weekStart,i),timezone)).flat();
+  if(mode==='lessons'){if(!events.length)return null;return {startMinute:Math.max(0,Math.floor((Math.min(...events.map(e=>e.start))-30)/SLOT)*SLOT),endMinute:Math.min(1440,Math.ceil((Math.max(...events.map(e=>e.end))+30)/SLOT)*SLOT)}}
   if(!events.length)return {startMinute:studentRange('current',timezone,value),endMinute:1440};
   let start=Math.min(...events.map(e=>e.start)),end=Math.max(...events.map(e=>e.end));const now=local(value,timezone);
   if(now.day>=weekStart&&now.day<plus(weekStart,7)){start=Math.min(start,now.minute);end=Math.max(end,now.minute)}
