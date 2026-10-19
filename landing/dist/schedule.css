@@ -45,3 +45,5 @@
 .schedule-main .calendar-event.is-compact{padding:2px 5px;line-height:1.2}.calendar-event.is-compact>span:last-child{display:none}.schedule-main .calendar-event.is-tiny{display:flex;align-items:center;gap:5px;padding:0 4px}.calendar-event.is-tiny strong{flex:1;min-width:0;font-size:11px}.calendar-event.is-tiny>span{flex-shrink:0;font-size:10px}
 
 .schedule-toolbar>#range-label{flex:0 0 100%;text-align:left;margin:0 0 8px;overflow-wrap:anywhere}
+
+.schedule-main .calendar-complete{position:absolute;z-index:3;width:28px;height:28px;min-height:28px;padding:0;border:1px solid #97bfa6;border-radius:6px;background:#edf8f0;color:#246a42;font-size:16px;cursor:pointer}.schedule-main .calendar-complete:hover{background:#d4efdd}.pending-lessons{margin:16px 0;padding:12px 16px;background:#fff8e9;border:1px solid #ead8b2;border-radius:12px}.pending-lessons>summary{min-height:44px;align-content:center;cursor:pointer;font-size:15px;font-weight:600}.pending-lesson{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:10px 0;border-top:1px solid #eadfc8;font-size:14px}.pending-lesson button{font-size:14px;color:#246a42}
