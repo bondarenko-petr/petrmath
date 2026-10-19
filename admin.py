@@ -369,3 +369,19 @@ def delete_student_permanently(user_id:int,data:DeleteStudentData,request:Reques
         except OSError:pending=True
     response.headers['Cache-Control']='no-store'
     return {'status':'deleted','deleted':result,'file_cleanup_pending':pending}
+
+
+@router.get('/students/{user_id}')
+def student_information(user_id:int,response:Response,user=Depends(require_admin)):
+    with database() as (c,p):
+        c.execute(f"SELECT u.id,u.name,u.username,u.email,u.is_active,COALESCE(s.phone,'') AS phone,COALESCE(s.parent_name,'') AS parent_name,COALESCE(s.parent_phone,'') AS parent_phone,s.school_grade,s.timezone,COALESCE(s.default_price_kopecks,0) AS default_price_kopecks,COALESCE(s.default_duration_minutes,45) AS default_duration_minutes FROM users u LEFT JOIN student_profiles s ON s.user_id=u.id WHERE u.id={p} AND u.role='student'",(user_id,))
+        row=c.fetchone()
+        if not row:raise HTTPException(404,'Ученик не найден')
+        result=dict(row)
+        from student_timezones import student_zone
+        from finance import balance
+        result['effective_timezone']=student_zone(c,p,user_id)
+        finances=balance(c,p,user_id)
+        for key in ['balance_kopecks','debt_kopecks','completed_lessons','available_lessons']:result[key]=finances[key]
+    response.headers['Cache-Control']='no-store'
+    return result

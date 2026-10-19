@@ -62,3 +62,15 @@ class StudentProfileTests(unittest.TestCase):
         self.assertEqual(self.post('profile',{'parent_name':'x'*101}).status_code,422)
         self.assertEqual(self.post('profile',{'parent_phone':'1'*41}).status_code,422)
         me=self.client.get('/api/auth/me').json();self.assertEqual(me['parent_name'],'');self.assertEqual(me['parent_phone'],'')
+
+    def test_information_card_is_admin_only_and_returns_current_contacts(self):
+        endpoint=f'/api/admin/students/{self.id}'
+        self.assertEqual(self.client.get(endpoint).status_code,401)
+        self.login();self.assertEqual(self.client.get(endpoint).status_code,403)
+        self.post('profile',{'phone':'+49 100','parent_name':'Анна','parent_phone':'+49 200','timezone':'Europe/Berlin'})
+        admin_id=support.seed_user('Преподаватель','info_teacher','Teacher password!','admin')
+        self.post('logout',{});self.post('login',{'username':'info_teacher','password':'Teacher password!'})
+        response=self.client.get(endpoint);self.assertEqual(response.status_code,200,response.text)
+        info=response.json();self.assertEqual(info['phone'],'+49 100');self.assertEqual(info['parent_name'],'Анна');self.assertEqual(info['parent_phone'],'+49 200');self.assertEqual(info['effective_timezone'],'Europe/Berlin');self.assertEqual(info['balance_kopecks'],0)
+        self.assertNotIn('password_hash',info);self.assertEqual(response.headers['cache-control'],'no-store')
+        self.assertEqual(self.client.get(f'/api/admin/students/{admin_id}').status_code,404)
