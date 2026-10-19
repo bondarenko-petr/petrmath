@@ -174,15 +174,15 @@ test('admin compact window includes all lessons with one hour before and two hou
  const scheduled=lesson(2,'2099-01-06T17:00:00Z','2099-01-06T17:45:00Z');
  const range=calendar.adminWindow([completed,scheduled],'2099-01-05','UTC','2099-01-05T15:10:00Z');
  assert.equal(range.startMinute,480);assert.equal(range.endMinute,1185);
- const later=calendar.adminWindow([scheduled],'2099-01-05','UTC','2099-01-05T15:10:00Z');assert.equal(later.startMinute,840);
- const empty=calendar.adminWindow([],'2099-01-05','Europe/Moscow','2099-01-05T10:40:00Z');assert.equal(empty.startMinute,750);assert.equal(empty.endMinute,945);
+ const later=calendar.adminWindow([scheduled],'2099-01-05','UTC','2099-01-05T15:10:00Z');assert.equal(later.startMinute,960);
+ const empty=calendar.adminWindow([],'2099-01-05','Europe/Moscow','2099-01-05T10:40:00Z');assert.equal(empty.startMinute,750);assert.equal(empty.endMinute,1230);
  const midnight=calendar.adminWindow([lesson(3,'2099-01-04T23:30:00Z','2099-01-05T00:15:00Z')],'2099-01-05','UTC','2099-01-05T15:00:00Z');assert.equal(midnight.startMinute,0);
 });
 
-test('admin compact window matches 12:00–20:00 example and keeps current time visible after lessons',()=>{
+test('admin compact window follows lesson times even late at night',()=>{
  const rows=[lesson(1,'2099-01-05T15:00:00Z','2099-01-05T18:00:00Z')];
- const range=calendar.adminWindow(rows,'2099-01-05','UTC','2099-01-05T13:00:00Z');assert.equal(range.startMinute,720);assert.equal(range.endMinute,1200);
- const late=calendar.adminWindow(rows,'2099-01-05','UTC','2099-01-05T23:00:00Z');assert.equal(late.endMinute,1440);
+ const range=calendar.adminWindow(rows,'2099-01-05','UTC','2099-01-05T13:00:00Z');assert.equal(range.startMinute,840);assert.equal(range.endMinute,1320);
+ const late=calendar.adminWindow(rows,'2099-01-05','UTC','2099-01-05T23:00:00Z');assert.equal(late.endMinute,1320);
 });
 
 test('lesson-only student window uses hour margins independent of current time',()=>{

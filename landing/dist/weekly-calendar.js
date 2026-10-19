@@ -29,9 +29,11 @@ const WeeklyCalendar=(()=>{
   return {startMinute:Math.max(0,Math.floor((start-60)/SLOT)*SLOT),endMinute:Math.min(1440,Math.ceil((end+60)/SLOT)*SLOT)};
  }
  function adminWindow(rows,weekStart,timezone,value=new Date()){
-  const now=local(value,timezone);let startMinute=studentRange('current',timezone,value),lastEnd=now.minute;
-  for(let i=0;i<7;i++)for(const event of segments(rows,plus(weekStart,i),timezone)){startMinute=Math.min(startMinute,Math.max(0,Math.floor((event.start-60)/SLOT)*SLOT));lastEnd=Math.max(lastEnd,event.end)}
-  return {startMinute,endMinute:Math.min(1440,Math.ceil((lastEnd+120)/SLOT)*SLOT)};
+  const events=Array.from({length:7},(_,i)=>segments(rows,plus(weekStart,i),timezone)).flat();
+  if(!events.length){const startMinute=Math.min(960,studentRange('current',timezone,value));return {startMinute,endMinute:startMinute+480}}
+  let startMinute=Math.max(0,Math.floor((Math.min(...events.map(e=>e.start))-60)/SLOT)*SLOT),endMinute=Math.min(1440,Math.ceil((Math.max(...events.map(e=>e.end))+120)/SLOT)*SLOT);
+  if(endMinute-startMinute<480){endMinute=Math.min(1440,startMinute+480);startMinute=Math.max(0,endMinute-480)}
+  return {startMinute,endMinute};
  }
  function selection(day,anchor,current,timezone){const start=Math.min(anchor,current),end=Math.max(anchor,current)+SLOT;
   for(let m=start;m<end;m+=SLOT)if(instants(day,m,timezone).length!==1)return null;

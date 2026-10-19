@@ -43,3 +43,5 @@
 .lesson-cancel-dialog{width:min(540px,calc(100vw - 32px));max-height:90vh;overflow:auto;box-sizing:border-box;padding:24px;border:1px solid #d8c9ee;border-radius:16px;background:white;color:#321653}.lesson-cancel-dialog::backdrop{background:#24103a66}.lesson-cancel-dialog h2{margin-top:0}.lesson-cancel-dialog label{display:grid;gap:8px}.lesson-cancel-dialog select{width:100%;padding:12px;font:inherit;border:1px solid #d8c9ee;border-radius:8px;background:white;color:inherit}.lesson-cancel-dialog button{min-height:44px}.lesson-cancel-dialog button[type=submit]{color:#a52036;border-color:#e4a9b3}
 
 .schedule-main .calendar-event.is-compact{padding:2px 5px;line-height:1.2}.calendar-event.is-compact>span:last-child{display:none}.schedule-main .calendar-event.is-tiny{display:flex;align-items:center;gap:5px;padding:0 4px}.calendar-event.is-tiny strong{flex:1;min-width:0;font-size:11px}.calendar-event.is-tiny>span{flex-shrink:0;font-size:10px}
+
+.schedule-toolbar>#range-label{flex:0 0 100%;text-align:left;margin:0 0 8px;overflow-wrap:anywhere}
