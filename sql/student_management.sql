@@ -20,6 +20,8 @@ DROP PROCEDURE migrate_student_management;
 CREATE TABLE IF NOT EXISTS student_profiles (
   user_id BIGINT UNSIGNED PRIMARY KEY,
   phone VARCHAR(40) NOT NULL DEFAULT '',
+  parent_name VARCHAR(100) NOT NULL DEFAULT '',
+  parent_phone VARCHAR(40) NOT NULL DEFAULT '',
   school_grade TINYINT UNSIGNED NULL,
   timezone VARCHAR(100) NULL,
   default_price_kopecks BIGINT UNSIGNED NOT NULL DEFAULT 0,

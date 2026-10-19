@@ -42,3 +42,23 @@ class StudentProfileTests(unittest.TestCase):
         me=self.client.get('/api/auth/me').json();self.assertEqual(me['phone'],'123');self.assertIsNone(me['timezone']);self.assertEqual(me['effective_timezone'],'Europe/Moscow')
         with database() as (c,p):c.execute('UPDATE users SET must_change_password=1 WHERE id=?',(self.id,))
         self.assertEqual(self.post('profile',{'phone':'changed'}).status_code,403)
+
+    def test_parent_contacts_are_shared_between_student_and_admin_editors(self):
+        self.login()
+        result=self.post('profile',{'email':self.data['username'],'parent_name':'  Анна Петровна  ','parent_phone':'  +7 999 123-45-67  '})
+        self.assertEqual(result.status_code,200,result.text)
+        me=self.client.get('/api/auth/me').json();self.assertEqual(me['parent_name'],'Анна Петровна');self.assertEqual(me['parent_phone'],'+7 999 123-45-67')
+        support.seed_user('Преподаватель','parent_teacher','Teacher password!','admin')
+        self.post('logout',{});self.post('login',{'username':'parent_teacher','password':'Teacher password!'})
+        row=next(row for row in self.client.get('/api/admin/students').json()['items'] if row['id']==self.id)
+        self.assertEqual(row['parent_name'],'Анна Петровна')
+        response=self.client.put(f'/api/admin/students/{self.id}',json={'name':row['name'],'username':row['username'],'email':row['email'],'phone':row['phone'],'default_price_kopecks':row['default_price_kopecks'],'default_duration_minutes':row['default_duration_minutes'],'timezone':row['timezone'],'parent_name':'Алексей','parent_phone':'+49 123'},headers=self.headers)
+        self.assertEqual(response.status_code,200,response.text)
+        self.post('logout',{});self.post('login',self.data)
+        me=self.client.get('/api/auth/me').json();self.assertEqual(me['parent_name'],'Алексей');self.assertEqual(me['parent_phone'],'+49 123')
+
+    def test_parent_contact_length_validation(self):
+        self.login()
+        self.assertEqual(self.post('profile',{'parent_name':'x'*101}).status_code,422)
+        self.assertEqual(self.post('profile',{'parent_phone':'1'*41}).status_code,422)
+        me=self.client.get('/api/auth/me').json();self.assertEqual(me['parent_name'],'');self.assertEqual(me['parent_phone'],'')

@@ -36,7 +36,7 @@ def students(response: Response, limit: int = Query(50, ge=1, le=100), offset: i
         counts={'active':0,'archive':0}
         for row in c.fetchall():counts['active' if row['is_active'] else 'archive']=int(row['total'])
         financial = include_finance or view=='debt' or sort in ('balance_asc','balance_desc')
-        fields = "u.id,u.name,u.email,u.username,u.role,u.is_active,u.must_change_password,COALESCE(s.phone,'') AS phone,s.school_grade,s.timezone,COALESCE(s.default_price_kopecks,0) AS default_price_kopecks,COALESCE(s.default_duration_minutes,45) AS default_duration_minutes"
+        fields = "u.id,u.name,u.email,u.username,u.role,u.is_active,u.must_change_password,COALESCE(s.phone,'') AS phone,COALESCE(s.parent_name,'') AS parent_name,COALESCE(s.parent_phone,'') AS parent_phone,s.school_grade,s.timezone,COALESCE(s.default_price_kopecks,0) AS default_price_kopecks,COALESCE(s.default_duration_minutes,45) AS default_duration_minutes"
         joins = " FROM users u LEFT JOIN student_profiles s ON s.user_id=u.id"
         if financial:
             fields += ",CAST(COALESCE(paid.total,0) AS SIGNED)-CAST(COALESCE(spent.total,0) AS SIGNED) AS balance_kopecks"
@@ -151,11 +151,13 @@ class StudentData(BaseModel):
     username: str = Field(min_length=3, max_length=40, pattern=r'^[a-zA-Z0-9._-]+$')
     email: Optional[EmailStr] = Field(default=None, max_length=254)
     phone: str = Field(default='', max_length=40)
+    parent_name: str = Field(default='', max_length=100)
+    parent_phone: str = Field(default='', max_length=40)
     school_grade: Optional[int] = Field(default=None, ge=1, le=11)
     default_price_kopecks: int = Field(ge=0, le=100000000, strict=True)
     default_duration_minutes: int = Field(default=45, ge=1, le=1440, strict=True)
 
-    @field_validator('name', 'phone', mode='before')
+    @field_validator('name', 'phone', 'parent_name', 'parent_phone', mode='before')
     @classmethod
     def strip(cls, value):
         return value.strip() if isinstance(value, str) else value
@@ -187,11 +189,11 @@ def student_exists(cursor, p, user_id):
 
 def write_student_profile(cursor, p, user_id, data):
     cursor.execute(f'SELECT user_id FROM student_profiles WHERE user_id={p}', (user_id,))
-    values = (data.phone,data.school_grade,data.default_price_kopecks,data.default_duration_minutes,data.timezone)
+    values = (data.phone,data.school_grade,data.default_price_kopecks,data.default_duration_minutes,data.timezone,data.parent_name,data.parent_phone)
     if cursor.fetchone():
-        cursor.execute(f'UPDATE student_profiles SET phone={p},school_grade={p},default_price_kopecks={p},default_duration_minutes={p},timezone={p} WHERE user_id={p}', (*values,user_id))
+        cursor.execute(f'UPDATE student_profiles SET phone={p},school_grade={p},default_price_kopecks={p},default_duration_minutes={p},timezone={p},parent_name={p},parent_phone={p} WHERE user_id={p}', (*values,user_id))
     else:
-        cursor.execute(f'INSERT INTO student_profiles (phone,school_grade,default_price_kopecks,default_duration_minutes,timezone,user_id) VALUES ({p},{p},{p},{p},{p},{p})', (*values,user_id))
+        cursor.execute(f'INSERT INTO student_profiles (phone,school_grade,default_price_kopecks,default_duration_minutes,timezone,parent_name,parent_phone,user_id) VALUES ({p},{p},{p},{p},{p},{p},{p},{p})', (*values,user_id))
 
 
 @router.post('/students', status_code=201)

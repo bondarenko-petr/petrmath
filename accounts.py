@@ -49,6 +49,9 @@ def database():
         connection.execute("CREATE TABLE IF NOT EXISTS student_profiles (user_id INTEGER PRIMARY KEY REFERENCES users(id), phone TEXT NOT NULL DEFAULT '', school_grade INTEGER, default_price_kopecks INTEGER NOT NULL DEFAULT 0, default_duration_minutes INTEGER NOT NULL DEFAULT 45)")
         if 'timezone' not in {row[1] for row in connection.execute('PRAGMA table_info(student_profiles)')}:
             connection.execute('ALTER TABLE student_profiles ADD COLUMN timezone TEXT')
+        profile_columns={row[1] for row in connection.execute('PRAGMA table_info(student_profiles)')}
+        for name in ('parent_name','parent_phone'):
+            if name not in profile_columns:connection.execute(f"ALTER TABLE student_profiles ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
         connection.execute('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL)')
         connection.execute('CREATE TABLE IF NOT EXISTS lesson_series (id INTEGER PRIMARY KEY, timezone TEXT NOT NULL, created_at INTEGER NOT NULL)')
         connection.execute("CREATE TABLE IF NOT EXISTS lessons (id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL REFERENCES users(id), series_id INTEGER REFERENCES lesson_series(id), starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL, duration_minutes INTEGER NOT NULL, price_kopecks INTEGER NOT NULL, topic TEXT NOT NULL DEFAULT '', meeting_url TEXT NOT NULL DEFAULT '', timezone TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'scheduled', created_at INTEGER NOT NULL)")
@@ -158,7 +161,7 @@ def profile(request: Request, response: Response):
     if not token:
         raise HTTPException(401, 'Войдите в аккаунт')
     with database() as (cursor, p):
-        cursor.execute(f"SELECT u.id,u.name,u.email,u.username,u.role,u.must_change_password,COALESCE(sp.phone,'') AS phone,sp.timezone FROM users u LEFT JOIN student_profiles sp ON sp.user_id=u.id JOIN sessions s ON u.id=s.user_id WHERE s.token_hash={p} AND s.expires_at>{p} AND u.is_active=1",
+        cursor.execute(f"SELECT u.id,u.name,u.email,u.username,u.role,u.must_change_password,COALESCE(sp.phone,'') AS phone,COALESCE(sp.parent_name,'') AS parent_name,COALESCE(sp.parent_phone,'') AS parent_phone,sp.timezone FROM users u LEFT JOIN student_profiles sp ON sp.user_id=u.id JOIN sessions s ON u.id=s.user_id WHERE s.token_hash={p} AND s.expires_at>{p} AND u.is_active=1",
                        (hashlib.sha256(token.encode()).hexdigest(), int(time.time())))
         user = cursor.fetchone()
     if not user:
@@ -211,9 +214,11 @@ class StudentProfileEdit(BaseModel):
     model_config=ConfigDict(extra='forbid')
     email: EmailStr | None = Field(default=None,max_length=254)
     phone: str = Field(default='',max_length=40)
+    parent_name: str = Field(default='',max_length=100)
+    parent_phone: str = Field(default='',max_length=40)
     timezone: str | None = Field(default=None,max_length=100)
 
-    @field_validator('phone',mode='before')
+    @field_validator('phone','parent_name','parent_phone',mode='before')
     @classmethod
     def clean_phone(cls,value):
         return value.strip() if isinstance(value,str) else value
@@ -239,9 +244,9 @@ def edit_own_student_profile(data:StudentProfileEdit,request:Request,response:Re
             c.execute(f'UPDATE users SET email={p} WHERE id={p}',(str(data.email).lower() if data.email else None,user['id']))
             c.execute(f'SELECT user_id FROM student_profiles WHERE user_id={p}',(user['id'],))
             if c.fetchone():
-                c.execute(f'UPDATE student_profiles SET phone={p},timezone={p} WHERE user_id={p}',(data.phone,data.timezone,user['id']))
+                c.execute(f'UPDATE student_profiles SET phone={p},parent_name={p},parent_phone={p},timezone={p} WHERE user_id={p}',(data.phone,data.parent_name,data.parent_phone,data.timezone,user['id']))
             else:
-                c.execute(f'INSERT INTO student_profiles (user_id,phone,timezone,default_duration_minutes) VALUES ({p},{p},{p},45)',(user['id'],data.phone,data.timezone))
+                c.execute(f'INSERT INTO student_profiles (user_id,phone,parent_name,parent_phone,timezone,default_duration_minutes) VALUES ({p},{p},{p},{p},{p},45)',(user['id'],data.phone,data.parent_name,data.parent_phone,data.timezone))
     except (sqlite3.IntegrityError,mysql.connector.IntegrityError):
         raise HTTPException(409,'Этот email уже используется другим аккаунтом')
     response.headers['Cache-Control']='no-store'
