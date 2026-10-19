@@ -1,14 +1,18 @@
 const form=document.querySelector('#auth-form'), status=document.querySelector('#status');
-let currentUser=null;
+let currentUser=null,profileScrollY=0,returnToProfile=false;
+const profileDialog=document.querySelector('#profile-dialog');
 async function api(path,data){
  const response=await fetch('/api/auth/'+path,data?{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'KrugPi'},body:JSON.stringify(data)}:{});
  const result=await response.json();
  if(!response.ok){const error=new Error(typeof result.detail==='string'?result.detail:'Проверьте заполнение полей.');error.status=response.status;throw error;}return result;
 }
 function passwordPanel(){
+ if(profileDialog.open){returnToProfile=true;profileDialog.close()}
+
  document.querySelector('#profile-panel').hidden=true;document.querySelector('#auth-panel').hidden=true;document.querySelector('#password-panel').hidden=false;
  document.querySelector('main').classList.remove('profile-view');document.querySelector('#cancel-password').hidden=Boolean(currentUser.must_change_password);
  document.querySelector('#change-help').textContent=currentUser.must_change_password?'Перед входом в кабинет замените временный пароль своим.':'Выберите новый пароль длиной от 10 символов.';
+ document.querySelector('#password-panel').scrollIntoView({block:'start'});
 }
 async function loadProfile(){
  currentUser=await api('me');clearStudentDashboard();status.textContent='';document.querySelector('#auth-panel').hidden=true;
@@ -24,10 +28,10 @@ form.addEventListener('submit',async event=>{event.preventDefault();const button
 document.querySelector('#password-form').addEventListener('submit',async event=>{
  event.preventDefault();const next=document.querySelector('#new-password').value;if(next!==document.querySelector('#repeat-password').value){status.textContent='Пароли не совпадают.';return;}
  const button=document.querySelector('#save-password');button.disabled=true;
- try{await api('change-password',{current_password:document.querySelector('#current-password').value,new_password:next});event.target.reset();await loadProfile();status.textContent='Пароль изменён.';}catch(error){status.textContent=error.message;}finally{button.disabled=false;}
+ try{await api('change-password',{current_password:document.querySelector('#current-password').value,new_password:next});event.target.reset();await loadProfile();status.textContent='Пароль изменён.';reopenProfileAfterPassword('Пароль изменён.');}catch(error){status.textContent=error.message;}finally{button.disabled=false;}
 });
-document.querySelector('#open-password').onclick=passwordPanel;document.querySelector('#cancel-password').onclick=()=>loadProfile().catch(error=>status.textContent=error.message);
-document.querySelector('#logout').onclick=async()=>{try{await api('logout',{});currentUser=null;clearStudentDashboard();document.querySelector('#profile-panel').hidden=true;document.querySelector('#password-panel').hidden=true;document.querySelector('#auth-panel').hidden=false;document.querySelector('main').classList.remove('profile-view');status.textContent='Вы вышли из аккаунта.';}catch(error){status.textContent=error.message;}};
+document.querySelector('#open-password').onclick=passwordPanel;document.querySelector('#cancel-password').onclick=()=>loadProfile().then(()=>reopenProfileAfterPassword()).catch(error=>status.textContent=error.message);
+document.querySelector('#logout').onclick=async()=>{try{await api('logout',{});currentUser=null;returnToProfile=false;if(profileDialog.open)profileDialog.close();clearStudentDashboard();document.querySelector('#profile-panel').hidden=true;document.querySelector('#password-panel').hidden=true;document.querySelector('#auth-panel').hidden=false;document.querySelector('main').classList.remove('profile-view');status.textContent='Вы вышли из аккаунта.';}catch(error){status.textContent=error.message;}};
 loadProfile().catch(error=>{if(error.status!==401)status.textContent='Не удалось загрузить профиль. Проверьте подключение и миграцию базы.';});
 
 document.querySelector('#password-logout').onclick=()=>document.querySelector('#logout').onclick();
@@ -40,4 +44,9 @@ document.querySelector('#edit-profile').onclick=()=>{
  profileEdit.reset();profileEdit.elements.email.value=currentUser.email||'';profileEdit.elements.phone.value=currentUser.phone||'';profileEdit.elements.parent_name.value=currentUser.parent_name||'';profileEdit.elements.parent_phone.value=currentUser.parent_phone||'';const picker=profileEdit.elements.timezone;picker.replaceChildren(new Option('По умолчанию ('+currentUser.effective_timezone+')',''));const names={'Europe/Moscow':'Москва','Europe/Berlin':'Берлин','Asia/Vladivostok':'Владивосток','Asia/Yekaterinburg':'Екатеринбург','Asia/Novosibirsk':'Новосибирск','Europe/Kaliningrad':'Калининград','UTC':'UTC'},zones=new Set(['UTC','Europe/Moscow','Europe/Berlin','Asia/Vladivostok',...(Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):[]),...(currentUser.timezone?[currentUser.timezone]:[])]);for(const zone of [...zones].sort())picker.add(new Option(names[zone]?names[zone]+' ('+zone+')':zone,zone));picker.value=currentUser.timezone||'';document.querySelector('#profile-edit-status').textContent='';profileEdit.hidden=false;profileEdit.elements.email.focus();
 };
 document.querySelector('#cancel-profile-edit').onclick=()=>{profileEdit.hidden=true;profileEdit.reset()};
-profileEdit.onsubmit=async event=>{event.preventDefault();const button=profileEdit.querySelector('[type=submit]'),feedback=document.querySelector('#profile-edit-status');button.disabled=true;feedback.textContent='Сохраняем…';try{await api('profile',{email:profileEdit.elements.email.value.trim()||null,phone:profileEdit.elements.phone.value,parent_name:profileEdit.elements.parent_name.value,parent_phone:profileEdit.elements.parent_phone.value,timezone:profileEdit.elements.timezone.value||null});await loadProfile();status.textContent='Профиль сохранён. Расписание обновлено в вашем часовом поясе.'}catch(e){feedback.textContent=e.message}finally{button.disabled=false}};
+profileEdit.onsubmit=async event=>{event.preventDefault();const button=profileEdit.querySelector('[type=submit]'),feedback=document.querySelector('#profile-edit-status');button.disabled=true;feedback.textContent='Сохраняем…';try{await api('profile',{email:profileEdit.elements.email.value.trim()||null,phone:profileEdit.elements.phone.value,parent_name:profileEdit.elements.parent_name.value,parent_phone:profileEdit.elements.parent_phone.value,timezone:profileEdit.elements.timezone.value||null});await loadProfile();status.textContent='Профиль сохранён. Расписание обновлено в вашем часовом поясе.';document.querySelector('#profile-dialog-status').textContent='Профиль сохранён.'}catch(e){feedback.textContent=e.message}finally{button.disabled=false}};
+
+document.querySelector('#open-profile').onclick=()=>{if(!currentUser)return;profileScrollY=window.scrollY;document.querySelector('#profile-dialog-status').textContent='';profileDialog.showModal()};
+document.querySelector('#close-profile').onclick=()=>profileDialog.close();
+profileDialog.addEventListener('close',()=>{document.querySelector('#profile-edit-form').hidden=true;if(!returnToProfile)requestAnimationFrame(()=>window.scrollTo({top:profileScrollY,behavior:'auto'}))});
+function reopenProfileAfterPassword(message=''){if(!returnToProfile)return;returnToProfile=false;document.querySelector('#profile-dialog-status').textContent=message;profileDialog.showModal()}
