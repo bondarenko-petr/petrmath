@@ -185,8 +185,15 @@ test('admin compact window matches 12:00–20:00 example and keeps current time 
  const late=calendar.adminWindow(rows,'2099-01-05','UTC','2099-01-05T23:00:00Z');assert.equal(late.endMinute,1440);
 });
 
-test('lesson-only student window uses half-hour margins independent of current time',()=>{
+test('lesson-only student window uses hour margins independent of current time',()=>{
  const rows=[lesson(1,'2099-01-05T15:00:00Z','2099-01-05T18:45:00Z')];
- const range=calendar.studentWindow('lessons',rows,'2099-01-05','UTC','2099-01-05T01:00:00Z');assert.equal(range.startMinute,870);assert.equal(range.endMinute,1155);
+ const range=calendar.studentWindow('lessons',rows,'2099-01-05','UTC','2099-01-05T01:00:00Z');assert.equal(range.startMinute,840);assert.equal(range.endMinute,1200);
  assert.equal(calendar.studentWindow('lessons',[],'2099-01-05','UTC'),null);
+});
+
+test('student calendar keeps at least four hours and clamps at midnight',()=>{
+ const windowFor=(start,end)=>calendar.studentWindow('lessons',[lesson(1,'2099-01-05T'+start+':00Z','2099-01-05T'+end+':00Z')],'2099-01-05','UTC');
+ const single=windowFor('15:45','16:30');assert.equal(single.startMinute,840);assert.equal(single.endMinute,1080);
+ const early=windowFor('00:15','01:00');assert.equal(early.startMinute,0);assert.equal(early.endMinute,240);
+ const late=windowFor('23:00','23:45');assert.equal(late.startMinute,1200);assert.equal(late.endMinute,1440);
 });
