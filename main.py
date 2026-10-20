@@ -47,6 +47,8 @@ def create_trial_request(request: TrialRequest) -> dict[str, str]:
 
 
 from recovery import router as recovery_router
+from drive_settings import router as drive_settings_router
+app.include_router(drive_settings_router)
 app.include_router(recovery_router)
 app.include_router(accounts_router)
 app.include_router(admin_router)
