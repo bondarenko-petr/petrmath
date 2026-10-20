@@ -64,6 +64,8 @@ def database():
         connection.execute('CREATE INDEX IF NOT EXISTS trial_management_status ON trial_request_management(status,request_id)')
         from material_schema import ensure_materials
         ensure_materials(connection)
+        from archive_schema import ensure_archives
+        ensure_archives(connection)
         from recovery import ensure_schema
         ensure_schema(connection)
         cursor = connection.cursor()

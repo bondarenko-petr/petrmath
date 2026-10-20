@@ -55,6 +55,8 @@ app.include_router(admin_router)
 app.include_router(lessons_router)
 app.include_router(finance_router)
 app.include_router(materials_router)
+from material_archives import router as material_archives_router
+app.include_router(material_archives_router)
 
 
 @app.exception_handler(sqlite3.Error)

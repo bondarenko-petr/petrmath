@@ -333,6 +333,8 @@ def delete_student_permanently(user_id:int,data:DeleteStudentData,request:Reques
             target=c.fetchone()
             if not target:raise HTTPException(404,'Ученик не найден')
             if target['is_active']:raise HTTPException(409,'Перед удалением перенесите ученика в архив')
+            c.execute(f'SELECT id FROM material_archives WHERE student_id={p} LIMIT 1',(user_id,))
+            if c.fetchone():raise HTTPException(409,'У ученика есть архивы материалов в Google Drive. Сначала необходимо обработать архивы; удаление ученика остановлено, чтобы не потерять доступ к ним.')
             if data.username!=target['username']:raise HTTPException(422,'Логин подтверждения не совпадает')
             # Uploads and material edits lock their parent lesson. Acquire those
             # locks before the first snapshot read so every file is staged.
