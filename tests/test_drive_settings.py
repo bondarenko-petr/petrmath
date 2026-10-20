@@ -93,3 +93,35 @@ class DriveSettingsTests(unittest.TestCase):
         with patch('drive_settings.httpx.Client') as client:
             self.assertEqual(self.client.post(self.base+'/disconnect',headers=self.headers).status_code,200);client.assert_not_called()
         self.assertFalse(self.client.get(self.base).json()['connected']);self.assertNotIn('secret-refresh',(self.directory/'settings.json').read_text())
+    def oauth_payload(self):
+        return {'client_id':'website.apps.googleusercontent.com','client_secret':'saved-secret','redirect_uri':'http://127.0.0.1:8000/api/admin/archive-settings/callback'}
+    def test_save_browser_credentials_without_exposing_secret(self):
+        payload=self.oauth_payload()
+        result=self.client.put(self.base+'/oauth-config',json=payload,headers=self.headers)
+        self.assertEqual(result.status_code,200,result.text);self.assertTrue(result.json()['secret_saved'])
+        self.assertNotIn('saved-secret',result.text);self.assertNotIn('saved-secret',self.client.get(self.base).text)
+        self.assertEqual(result.json()['config_source'],'settings')
+        state=self.connect()
+        with drive.storage() as data:self.assertEqual(data['app_config']['client_secret'],'saved-secret')
+        self.assertTrue(state)
+    def test_secret_blank_keeps_value_and_unchanged_config_keeps_connection(self):
+        payload=self.oauth_payload();self.client.put(self.base+'/oauth-config',json=payload,headers=self.headers);self.seed_connection()
+        result=self.client.put(self.base+'/oauth-config',json=payload|{'client_secret':''},headers=self.headers)
+        self.assertEqual(result.status_code,200);self.assertTrue(result.json()['connected'])
+        with drive.storage() as data:self.assertEqual(data['app_config']['client_secret'],'saved-secret')
+    def test_changed_config_invalidates_connection_and_pending_oauth(self):
+        payload=self.oauth_payload();self.client.put(self.base+'/oauth-config',json=payload,headers=self.headers);self.seed_connection();state=self.connect()
+        result=self.client.put(self.base+'/oauth-config',json=payload|{'client_secret':'replacement-secret'},headers=self.headers)
+        self.assertEqual(result.status_code,200);self.assertFalse(result.json()['connected'])
+        callback=self.client.get(self.base+'/callback',params={'state':state,'code':'old-code'},follow_redirects=False)
+        self.assertIn('invalid',callback.headers['location'])
+    def test_new_client_requires_secret_and_rejects_bad_redirects(self):
+        payload=self.oauth_payload();self.client.put(self.base+'/oauth-config',json=payload,headers=self.headers)
+        no_secret={k:v for k,v in payload.items() if k!='client_secret'}
+        self.assertEqual(self.client.put(self.base+'/oauth-config',json=no_secret|{'client_id':'other.apps.googleusercontent.com'},headers=self.headers).status_code,422)
+        for uri in ['http://example.com/api/admin/archive-settings/callback','https://example.com/elsewhere','https://name:pass@example.com/api/admin/archive-settings/callback']:
+            self.assertEqual(self.client.put(self.base+'/oauth-config',json=payload|{'redirect_uri':uri},headers=self.headers).status_code,422)
+    def test_oauth_form_admin_only_and_csrf_required(self):
+        self.assertEqual(self.client.put(self.base+'/oauth-config',json=self.oauth_payload()).status_code,403)
+        self.post('login',self.data)
+        self.assertEqual(self.client.put(self.base+'/oauth-config',json=self.oauth_payload(),headers=self.headers).status_code,403)
