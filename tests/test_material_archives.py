@@ -111,3 +111,13 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(response.status_code,200,response.text)
         response=self.client.request('DELETE','/api/admin/students/'+str(self.id),json={'username':self.data['username']},headers=self.headers)
         self.assertEqual(response.status_code,409,response.text)
+    def test_admin_error_filter_and_table_metadata(self):
+        self.remote.corrupt=True;self.create();self.remote.corrupt=False;self.create()
+        filtered=self.client.get('/api/material-archives?errors_only=true').json()
+        self.assertEqual(filtered['total'],1);self.assertEqual(filtered['items'][0]['status'],'failed')
+        all_rows=self.listing();self.assertEqual(len(all_rows),2)
+        for row in all_rows:
+            self.assertEqual(row['student_name'],'Ученик');self.assertEqual(row['period_from'],'2026-10-17');self.assertNotIn('manifest',row);self.assertNotIn('drive_id',row)
+        self.login_student()
+        result=self.client.get('/api/material-archives?errors_only=true').json()
+        self.assertEqual(result['total'],1);self.assertEqual(result['items'][0]['status'],'verified')

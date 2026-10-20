@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field, model_validator
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartException
@@ -58,7 +58,7 @@ def describe(c,p,row):
         c.execute(f"SELECT starts_at FROM lessons WHERE student_id={p} AND starts_at>={p} AND status!='cancelled' ORDER BY starts_at,id LIMIT 1",(row['student_id'],row['ends_at']))
         nxt=c.fetchone()
         if nxt: result['next_lesson_at']=datetime.fromtimestamp(nxt['starts_at'],timezone.utc).isoformat()
-    c.execute(f'SELECT id,category,filename,media_type,size,created_at FROM material_files WHERE lesson_id={p} AND deleted_at IS NULL ORDER BY created_at,id',(row['id'],))
+    c.execute(f'SELECT id,category,filename,media_type,size,created_at,archive_id,archived_at FROM material_files WHERE lesson_id={p} AND deleted_at IS NULL ORDER BY created_at,id',(row['id'],))
     result['files']=[dict(f) for f in c.fetchall()]
     return result
 
@@ -176,7 +176,7 @@ async def upload_files(lesson_id:int,request:Request,category:Category=Query(...
             result=[]
             with database() as (c,p):
                 lesson(c,p,lesson_id,user,True)
-                c.execute(f'SELECT COUNT(*) AS total FROM material_files WHERE lesson_id={p} AND category={p} AND deleted_at IS NULL',(lesson_id,category))
+                c.execute(f'SELECT COUNT(*) AS total FROM material_files WHERE lesson_id={p} AND category={p} AND deleted_at IS NULL AND archived_at IS NULL',(lesson_id,category))
                 if c.fetchone()['total']+len(uploads)>5:
                     raise HTTPException(422,'В этом блоке уже есть файлы. Максимум — 5 вложений.')
                 for f in uploads:
@@ -211,6 +211,8 @@ def download_file(file_id:str,user=Depends(member)):
         if not row or row['status']!='completed' or (user['role']!='admin' and row['student_id']!=user['id']):
             raise HTTPException(404,'Вложение не найдено')
         row=dict(row)
+    if row.get('archived_at') and row.get('archive_id'):
+        return RedirectResponse('/api/material-archives/'+row['archive_id']+'/download',status_code=303,headers={'Cache-Control':'no-store'})
     if not re.fullmatch(r'[0-9a-f]{32}\.(pdf|jpg|png)',row['storage_key']): raise HTTPException(404,'Вложение не найдено')
     path=storage()/row['storage_key']
     if path.is_symlink() or path.resolve().parent!=storage() or not path.is_file(): raise HTTPException(404,'Файл отсутствует в хранилище. Обратитесь к преподавателю.')

@@ -14,7 +14,16 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-app = FastAPI(title="Круг Пи — математика, ОГЭ и ЕГЭ")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
+    from archive_cleanup import start_worker, stop_worker
+    start_worker()
+    try:yield
+    finally:stop_worker()
+
+app = FastAPI(lifespan=lifespan,title="Круг Пи — математика, ОГЭ и ЕГЭ")
 ROOT = Path(__file__).resolve().parent
 
 

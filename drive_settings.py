@@ -10,7 +10,7 @@ import secrets
 import time
 from urllib.parse import urlencode, urlsplit
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, ConfigDict, SecretStr
 from accounts import COOKIE, guard, throttle
@@ -67,7 +67,7 @@ def log(data,message):
 
 def public(data):
     connection=data.get('connection',{});config=effective_config(data)
-    return {'client_id':config.get('client_id',''),'secret_saved':bool(config.get('client_secret')),'config_source':'settings' if data.get('app_config') else 'environment','configured':all(config.get(key) for key in ('client_id','client_secret','redirect_uri')),'missing':[env for key,env in zip(('client_id','client_secret','redirect_uri'),FIELDS) if not config.get(key)],'redirect_uri':config.get('redirect_uri',''),'connected':bool(connection.get('refresh_token')),'email':connection.get('email',''),'folder_id':connection.get('folder_id',''),'folder_name':connection.get('folder_name',''),'retention_days':data.get('retention_days',28),'grace_days':data.get('grace_days',14),'mode':'manual','deletion_enabled':False,'events':data.get('events',[])}
+    return {'client_id':config.get('client_id',''),'secret_saved':bool(config.get('client_secret')),'config_source':'settings' if data.get('app_config') else 'environment','configured':all(config.get(key) for key in ('client_id','client_secret','redirect_uri')),'missing':[env for key,env in zip(('client_id','client_secret','redirect_uri'),FIELDS) if not config.get(key)],'redirect_uri':config.get('redirect_uri',''),'connected':bool(connection.get('refresh_token')),'email':connection.get('email',''),'folder_id':connection.get('folder_id',''),'folder_name':connection.get('folder_name',''),'retention_days':data.get('retention_days',28),'grace_days':data.get('grace_days',14),'mode':'manual','deletion_enabled':bool(data.get('deletion_enabled',False)),'cleanup_last_finished':data.get('cleanup_last_finished'),'cleanup_result':data.get('cleanup_result'),'events':data.get('events',[])}
 
 @router.get('')
 def settings(response:Response,user=Depends(require_admin)):
@@ -83,7 +83,7 @@ class Retention(BaseModel):
 def save_settings(values:Retention,request:Request,user=Depends(require_admin)):
     guard(request)
     with storage() as data:
-        data.update(values.model_dump());log(data,'Сроки хранения сохранены. Автоматическая обработка выключена.')
+        data.update(values.model_dump());log(data,'Сроки хранения сохранены.')
         return public(data)
 
 class OAuthConfig(BaseModel):
@@ -192,3 +192,35 @@ def disconnect(request:Request,user=Depends(require_admin)):
     with storage() as data:
         data.pop('connection',None);data.pop('oauth',None);log(data,'Подключение отключено на сервере. Файлы в Drive сохранены.')
     return {'status':'disconnected'}
+
+
+class CleanupMode(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    enabled:bool
+
+@router.post('/cleanup-mode')
+def cleanup_mode(values:CleanupMode,request:Request,user=Depends(require_admin)):
+    guard(request)
+    if values.enabled:
+        from accounts import database
+        with database() as (c,p):c.execute('SELECT verified_at,notified_at,cleanup_at FROM material_archives LIMIT 1');c.fetchall()
+        if any(not os.getenv(key) for key in ('SMTP_HOST','SMTP_USER','SMTP_PASSWORD','SMTP_FROM','SITE_URL')):raise HTTPException(422,'Сначала настройте SMTP и SITE_URL для уведомлений')
+        base=urlsplit(os.getenv('SITE_URL',''))
+        if base.scheme!='https' or not base.hostname or base.username or base.password or base.query or base.fragment:raise HTTPException(422,'Для уведомлений задайте корректный HTTPS SITE_URL')
+    with storage() as data:
+        if values.enabled:
+            configuration(data)
+            if not data.get('connection'):raise HTTPException(409,'Сначала подключите Google Drive')
+        data['deletion_enabled']=values.enabled
+        if values.enabled:data['cleanup_last_started']=0
+        log(data,'Автоматическая очистка '+('включена. Проверенные архивы будут обработаны после уведомления и резервного срока.' if values.enabled else 'выключена.'))
+        return public(data)
+
+@router.post('/cleanup-run')
+def cleanup_run(request:Request,tasks:BackgroundTasks,user=Depends(require_admin)):
+    guard(request);throttle(request)
+    with storage() as data:
+        if not data.get('deletion_enabled'):raise HTTPException(409,'Автоматическая очистка выключена')
+    from archive_cleanup import run_cycle
+    tasks.add_task(run_cycle,True)
+    return {'status':'started'}

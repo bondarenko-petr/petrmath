@@ -75,3 +75,15 @@ def send_account_link(recipient, purpose, token=None):
         message['Subject']='Круг Пи — '+title.lower()
         message.set_content(f'{title}:\n{base}/account-recovery.html#{purpose}={token}\n\nСсылка одноразовая и действует 30 минут. Если вы не отправляли запрос, проигнорируйте письмо.')
     deliver(message)
+
+
+def send_archive_notice(recipient, filename):
+    base=os.environ.get('SITE_URL','').rstrip('/')
+    parsed=urlsplit(base)
+    if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError('Настройте HTTPS SITE_URL для писем об архивах')
+    if any(not os.getenv(key) for key in ['SMTP_HOST','SMTP_USER','SMTP_PASSWORD','SMTP_FROM']):raise ValueError('Настройте SMTP')
+    message=EmailMessage();message['From']=str(TypeAdapter(EmailStr).validate_python(os.environ['SMTP_FROM']));message['To']=str(TypeAdapter(EmailStr).validate_python(recipient))
+    message['Subject']='Круг Пи — архив материалов готов'
+    message.set_content('Ваши задания и конспекты сохранены в архив: '+filename+'\nМатериалы распределены по датам и темам уроков. Скачать ZIP можно после входа в личный кабинет:\n'+base+'/material-archives.html\n\nОтдельные исходные файлы могут быть удалены с сервера не ранее чем через резервный срок хранения. Проверенный ZIP останется доступен в кабинете.')
+    deliver(message)

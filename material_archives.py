@@ -140,7 +140,7 @@ def create_job(archive_id,manifest,tz,filename,config):
                 file_id=remote_upload(client,headers,config['connection'],path,filename,archive_id)
                 update(archive_id,'verifying',drive_id=file_id)
                 remote_download(client,headers,file_id,Path(folder)/'verify.zip',size,checksum)
-                if not update(archive_id,'verified',size=size,sha256=checksum,manifest=json.dumps(manifest,ensure_ascii=False,default=str)):
+                if not update(archive_id,'verified',verified_at=int(time.time()),size=size,sha256=checksum,manifest=json.dumps(manifest,ensure_ascii=False,default=str)):
                     raise ValueError('archive_removed')
     except Exception:
         if file_id and headers:
@@ -172,16 +172,20 @@ def create(data:ArchiveInput,request:Request,tasks:BackgroundTasks,user=Depends(
     return {'id':archive_id,'status':'building'}
 
 @router.get('')
-def list_archives(response:Response,student_id:int|None=Query(None,gt=0),limit:int=Query(20,ge=1,le=100),offset:int=Query(0,ge=0),user=Depends(member)):
+def list_archives(response:Response,student_id:int|None=Query(None,gt=0),limit:int=Query(20,ge=1,le=100),offset:int=Query(0,ge=0),errors_only:bool=False,user=Depends(member)):
     owner=user['id'] if user['role']=='student' else student_id
     condition='1=1';args=[]
     if owner is not None:condition+=' AND student_id=%s';args.append(owner)
     with database() as (c,p):
         condition=condition.replace('%s',p)
         if user['role']=='student':condition+=" AND status='verified'"
+        elif errors_only:condition+=" AND status='failed'"
         c.execute('SELECT COUNT(*) AS n FROM material_archives WHERE '+condition,tuple(args));total=c.fetchone()['n']
-        c.execute('SELECT id,student_id,status,filename,file_count,lesson_count,size,created_at,updated_at,error FROM material_archives WHERE '+condition+f' ORDER BY created_at DESC,id DESC LIMIT {p} OFFSET {p}',(*args,limit,offset))
+        c.execute('SELECT id,student_id,(SELECT name FROM users WHERE users.id=material_archives.student_id) AS student_name,status,filename,file_count,lesson_count,size,created_at,updated_at,error,notified_at,cleanup_at,cleanup_error,purged_count FROM material_archives WHERE '+condition+f' ORDER BY created_at DESC,id DESC LIMIT {p} OFFSET {p}',(*args,limit,offset))
         rows=[dict(row) for row in c.fetchall()]
+        for row in rows:
+            period=re.search(r'(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})',row['filename'])
+            row['period_from']=period[1] if period else None;row['period_to']=period[2] if period else None
     response.headers['Cache-Control']='no-store'
     return {'items':rows,'total':total}
 

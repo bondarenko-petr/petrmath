@@ -68,6 +68,7 @@ def database():
         ensure_archives(connection)
         from recovery import ensure_schema
         ensure_schema(connection)
+        connection.commit()
         cursor = connection.cursor()
         placeholder = '?'
     else:
