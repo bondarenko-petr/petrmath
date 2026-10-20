@@ -391,3 +391,21 @@ def student_information(user_id:int,response:Response,user=Depends(require_admin
         for key in ['balance_kopecks','debt_kopecks','completed_lessons','available_lessons']:result[key]=finances[key]
     response.headers['Cache-Control']='no-store'
     return result
+
+
+@router.delete('/trial-requests/{request_id}')
+def delete_archived_trial(request_id:int,request:Request,response:Response,version:int=Query(...,ge=1),user=Depends(require_admin)):
+    guard(request)
+    with database() as (c,p):
+        if p=='?':c.execute('BEGIN IMMEDIATE')
+        c.execute(f'SELECT id FROM trial_requests WHERE id={p}'+(' FOR UPDATE' if p!='?' else ''),(request_id,))
+        if not c.fetchone():raise HTTPException(404,'Заявка не найдена')
+        c.execute(f'SELECT status,version FROM trial_request_management WHERE request_id={p}',(request_id,))
+        row=c.fetchone()
+        if not row or row['status'] not in ('closed','enrolled'):
+            raise HTTPException(409,'Удалять можно только заявки из архива')
+        if row['version']!=version:raise HTTPException(409,'Заявка изменилась. Обновите список перед удалением.')
+        c.execute(f'DELETE FROM trial_request_management WHERE request_id={p}',(request_id,))
+        c.execute(f'DELETE FROM trial_requests WHERE id={p}',(request_id,))
+    response.headers['Cache-Control']='no-store'
+    return {'status':'deleted'}

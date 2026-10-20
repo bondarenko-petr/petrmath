@@ -83,3 +83,27 @@ class TrialManagementTests(unittest.TestCase):
         self.post('login',self.data)
         self.assertEqual(self.list().status_code,403)
         self.assertEqual(self.update().status_code,403)
+
+    def test_delete_archived_request_only_and_preserve_users(self):
+        url='/api/admin/trial-requests/'+str(self.request_id)+'?version=1'
+        self.assertEqual(self.client.delete(url,headers=self.headers).status_code,409)
+        self.assertEqual(self.update(status='closed',close_reason='declined').status_code,200)
+        self.assertEqual(self.client.delete(url.replace('version=1','version=2'),headers=self.headers).status_code,409)
+        self.assertEqual(self.client.delete(url).status_code,403)
+        result=self.client.delete(url,headers=self.headers)
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertEqual(self.list(view='archive').json()['archive_total'],0)
+        from accounts import database
+        with database() as (c,p):
+            c.execute('SELECT COUNT(*) AS n FROM trial_requests');self.assertEqual(c.fetchone()['n'],0)
+            c.execute('SELECT COUNT(*) AS n FROM trial_request_management');self.assertEqual(c.fetchone()['n'],0)
+            c.execute('SELECT COUNT(*) AS n FROM users');self.assertEqual(c.fetchone()['n'],2)
+        self.assertEqual(self.client.delete(url,headers=self.headers).status_code,404)
+
+    def test_restored_request_cannot_be_deleted_and_student_forbidden(self):
+        self.update(status='enrolled')
+        self.assertEqual(self.update(status='new',version=1).status_code,200)
+        url='/api/admin/trial-requests/'+str(self.request_id)+'?version=2'
+        self.assertEqual(self.client.delete(url,headers=self.headers).status_code,409)
+        self.post('login',self.data)
+        self.assertEqual(self.client.delete(url,headers=self.headers).status_code,403)
