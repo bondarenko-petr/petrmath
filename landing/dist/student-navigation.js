@@ -1,5 +1,5 @@
 (()=>{
- const sections=[['calendar','Расписание','account.html'],['materials','Задания и конспекты','materials.html'],['balance','Баланс','finance.html']];
+ const sections=[['calendar','Расписание','account.html'],['materials','Задания и конспекты','materials.html'],['archives','Архивы материалов','material-archives.html'],['balance','Баланс','finance.html']];
  window.setStudentNavActive=active=>document.querySelectorAll('#student-navigation [data-student-nav]').forEach(link=>{if(link.dataset.studentNav===active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')});
  window.unmountStudentNavigation=()=>{document.querySelector('#student-navigation')?.remove();document.querySelector('#student-logout')?.remove();document.body.classList.remove('student-shell')};
  window.mountStudentNavigation=active=>{
