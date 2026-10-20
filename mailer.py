@@ -33,6 +33,10 @@ def send_student_credentials(recipient, name, username, password):
 
 Круг Пи
 ''')
+    deliver(message)
+
+
+def deliver(message):
     mode = os.environ.get('SMTP_SECURITY', 'ssl')
     context = ssl.create_default_context()
     if mode == 'ssl':
@@ -50,3 +54,24 @@ def send_student_credentials(recipient, name, username, password):
         raise ValueError('SMTP_SECURITY: используйте ssl или starttls')
     if refused:
         raise smtplib.SMTPRecipientsRefused(refused)
+
+
+def send_account_link(recipient, purpose, token=None):
+    required=['SMTP_HOST','SMTP_USER','SMTP_PASSWORD','SMTP_FROM','SITE_URL']
+    if any(not os.environ.get(key) for key in required):
+        raise ValueError('Настройте SMTP и SITE_URL')
+    base=os.environ['SITE_URL'].rstrip('/')
+    parsed=urlsplit(base)
+    if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError('SITE_URL должен быть HTTPS-адресом сайта без параметров')
+    message=EmailMessage()
+    message['From']=str(TypeAdapter(EmailStr).validate_python(os.environ['SMTP_FROM']))
+    message['To']=str(TypeAdapter(EmailStr).validate_python(recipient))
+    if purpose=='changed':
+        message['Subject']='Круг Пи — пароль изменён'
+        message.set_content('Пароль вашего аккаунта изменён. Если это сделали не вы, свяжитесь с администратором. Сам пароль в письмах не отправляется.')
+    else:
+        title='Подтвердить почту' if purpose=='verify' else 'Установить новый пароль'
+        message['Subject']='Круг Пи — '+title.lower()
+        message.set_content(f'{title}:\n{base}/account-recovery.html#{purpose}={token}\n\nСсылка одноразовая и действует 30 минут. Если вы не отправляли запрос, проигнорируйте письмо.')
+    deliver(message)

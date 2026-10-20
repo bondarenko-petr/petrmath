@@ -46,6 +46,8 @@ def create_trial_request(request: TrialRequest) -> dict[str, str]:
     return {"status": "saved"}
 
 
+from recovery import router as recovery_router
+app.include_router(recovery_router)
 app.include_router(accounts_router)
 app.include_router(admin_router)
 app.include_router(lessons_router)

@@ -219,6 +219,11 @@ def edit_student(user_id: int, data: StudentEditData, request: Request, response
             existing = student_exists(cursor,p,user_id)
             if data.username != existing['username'] and not re.fullmatch(r'[a-zA-Z0-9._-]{3,40}', data.username):
                 raise HTTPException(422, 'Новый логин: от 3 до 40 символов, латиница, цифры, точка, дефис или подчёркивание')
+            cursor.execute(f'SELECT email FROM users WHERE id={p}',(user_id,))
+            previous_email=cursor.fetchone()['email']
+            if (previous_email or '').lower()!=(str(data.email).lower() if data.email else ''):
+                cursor.execute(f'DELETE FROM verified_emails WHERE user_id={p}',(user_id,))
+                cursor.execute(f'DELETE FROM account_links WHERE user_id={p}',(user_id,))
             cursor.execute(f"UPDATE users SET name={p},username={p},email={p} WHERE id={p} AND role='student'", (data.name,data.username,str(data.email).lower() if data.email else None,user_id))
             write_student_profile(cursor,p,user_id,data)
     except (sqlite3.IntegrityError,mysql.connector.IntegrityError):
@@ -235,6 +240,7 @@ def reset_student(user_id: int, request: Request, response: Response, user=Depen
         student_exists(cursor,p,user_id)
         cursor.execute(f'UPDATE users SET password_hash={p},must_change_password=1,password_changed_at={p} WHERE id={p}',(hash_password(password),int(time.time()),user_id))
         cursor.execute(f'DELETE FROM sessions WHERE user_id={p}',(user_id,))
+        cursor.execute(f'DELETE FROM account_links WHERE user_id={p}',(user_id,))
         cursor.execute(f'SELECT username,email FROM users WHERE id={p}',(user_id,))
         student=cursor.fetchone()
     response.headers['Cache-Control']='no-store'

@@ -64,6 +64,8 @@ def database():
         connection.execute('CREATE INDEX IF NOT EXISTS trial_management_status ON trial_request_management(status,request_id)')
         from material_schema import ensure_materials
         ensure_materials(connection)
+        from recovery import ensure_schema
+        ensure_schema(connection)
         cursor = connection.cursor()
         placeholder = '?'
     else:
@@ -241,6 +243,10 @@ def edit_own_student_profile(data:StudentProfileEdit,request:Request,response:Re
             if p=='?':c.execute('BEGIN IMMEDIATE')
             c.execute(f"SELECT id FROM users WHERE id={p} AND role='student' AND is_active=1"+(' FOR UPDATE' if p!='?' else ''),(user['id'],))
             if not c.fetchone():raise HTTPException(409,'Аккаунт изменился. Войдите снова.')
+            next_email=str(data.email).lower() if data.email else None
+            if (user['email'] or '').lower()!=(next_email or ''):
+                c.execute(f'DELETE FROM verified_emails WHERE user_id={p}',(user['id'],))
+                c.execute(f'DELETE FROM account_links WHERE user_id={p}',(user['id'],))
             c.execute(f'UPDATE users SET email={p} WHERE id={p}',(str(data.email).lower() if data.email else None,user['id']))
             c.execute(f'SELECT user_id FROM student_profiles WHERE user_id={p}',(user['id'],))
             if c.fetchone():

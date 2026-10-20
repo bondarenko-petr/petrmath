@@ -588,3 +588,13 @@ SQLite-базу; реальную миграцию и подключение MyS
 Профиль в кабинете открывается компактной кнопкой «Мой профиль» возле приветствия. Контакты, родительские данные и редактирование размещены в отдельном диалоге; при закрытии сохраняется положение страницы. Переход к смене пароля закрывает диалог, после сохранения/отмены профиль можно продолжить в том же окне.
 
 Меню ученика едино для расписания, материалов и баланса: «Расписание», «Задания и конспекты», «Баланс», «Мой профиль». На компьютере — горизонтальная панель, на телефоне — закреплённая нижняя панель с отступом safe-area. Главная содержит ближайший урок и календарь; материалы и расчёты доступны отдельными страницами. Выход перенесён в профиль. Ближайший урок показывает ссылку подключения, если она задана.
+
+### Email verification and password recovery
+
+Before deploying this version with MySQL, run `sql/account_recovery.sql` as the database administrator. This adds `account_links` and `verified_emails` without modifying existing users. SQLite creates these tables automatically. Existing email addresses start unverified.
+
+Configure `SITE_URL` (the real public HTTPS site), `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` (`ssl` or `starttls`), `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` in the server environment. Never commit actual credentials. Restart the application after configuration changes. A localhost URL cannot be used for links delivered to students.
+
+Students confirm their address from **Мой профиль → Подтвердить почту**. The login form's **Забыли пароль?** link accepts a verified email address. Only the most recent link works; links expire after 30 minutes and are consumed only on explicit confirmation or successful password submission. Repeat email requests are limited to once per minute per account/purpose, plus an IP request limit. Resetting a password revokes all sessions and outstanding links. Admin password reset remains available and invalidates recovery links too. Changing email clears its confirmation. Archived accounts cannot recover access.
+
+The API returns the same recovery request message for unknown, unverified and valid addresses. SMTP delivery errors are logged without credentials, email addresses or raw tokens; check server logs when investigating delivery. Configure monitoring for `Account email delivery failed`. After deployment, confirm a test account's email, receive a reset email, set a password, and verify the link cannot be reused. Automated tests mock delivery and use temporary SQLite databases; they do not verify production SMTP or MySQL.
