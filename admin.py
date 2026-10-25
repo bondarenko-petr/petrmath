@@ -196,6 +196,30 @@ def write_student_profile(cursor, p, user_id, data):
         cursor.execute(f'INSERT INTO student_profiles (phone,school_grade,default_price_kopecks,default_duration_minutes,timezone,parent_name,parent_phone,user_id) VALUES ({p},{p},{p},{p},{p},{p},{p},{p})', (*values,user_id))
 
 
+def username_base(name):
+    """Readable Russian transliteration, bounded to leave room for suffixes."""
+    mapping = dict(zip('абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
+        ['a','b','v','g','d','e','yo','zh','z','i','y','k','l','m','n','o','p','r','s','t','u','f','kh','ts','ch','sh','shch','','y','','e','yu','ya']))
+    import unicodedata
+    text = ''.join(mapping.get(ch,ch) for ch in name.lower())
+    text = unicodedata.normalize('NFKD',text).encode('ascii','ignore').decode()
+    base = re.sub(r'[^a-z0-9]+','.',text).strip('.')[:32].rstrip('.')
+    return base if len(base)>=3 else (base+'.student' if base else 'student')
+
+
+@router.get('/username-suggestion')
+def suggest_username(response: Response, name: str = Query(min_length=1,max_length=100), user=Depends(require_admin)):
+    base = username_base(name)
+    with database() as (cursor,p):
+        cursor.execute(f'SELECT username FROM users WHERE LOWER(username) LIKE {p}',(base+'%',))
+        occupied = {row['username'].lower() for row in cursor.fetchall()}
+    candidate=base; suffix=2
+    while candidate in occupied:
+        candidate=base+str(suffix); suffix+=1
+    response.headers['Cache-Control']='no-store'
+    return {'username':candidate}
+
+
 @router.post('/students', status_code=201)
 def create_student(data: StudentData, request: Request, response: Response, user=Depends(require_admin)):
     guard(request)

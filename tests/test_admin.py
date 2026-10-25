@@ -50,3 +50,27 @@ class StudentManagementTests(support.AccountTests):
         self.assertEqual(self.client.put(url,json=payload|{'username':'invalid@new','default_price_kopecks':1},headers=self.headers).status_code,422)
         saved=next(s for s in self.client.get('/api/admin/students').json()['items'] if s['id']==self.id)
         self.assertEqual(saved['default_price_kopecks'],225050)
+
+    def test_username_suggestions(self):
+        self.assertEqual(self.client.get('/api/admin/username-suggestion?name=Иван').status_code,401)
+        self.post('login',self.data)
+        self.assertEqual(self.client.get('/api/admin/username-suggestion?name=Иван').status_code,403)
+        support.seed_user('Админ','teacher','Teacher password!','admin')
+        self.post('login',{'username':'teacher','password':'Teacher password!'})
+        def suggestion(name):
+            result=self.client.get('/api/admin/username-suggestion',params={'name':name})
+            self.assertEqual(result.status_code,200,result.text)
+            self.assertEqual(result.headers['cache-control'],'no-store')
+            return result.json()['username']
+        self.assertEqual(suggestion('Иван'),'ivan')
+        self.assertEqual(suggestion('  Анна Смирнова  '),'anna.smirnova')
+        support.seed_user('Иван','IVAN','Student password!','student')
+        support.seed_user('Иван','ivan2','Student password!','student')
+        from accounts import database
+        with database() as (cursor,p):cursor.execute("UPDATE users SET is_active=0 WHERE username='ivan2'")
+        self.assertEqual(suggestion('Иван'),'ivan3')
+        for name in ['李','Я','А'*100,'!!!']:
+            login=suggestion(name)
+            self.assertGreaterEqual(len(login),3)
+            self.assertLessEqual(len(login),40)
+            self.assertRegex(login,r'^[a-z0-9.]+$')
