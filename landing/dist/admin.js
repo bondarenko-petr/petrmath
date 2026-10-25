@@ -121,7 +121,37 @@ async function suggestStudentUsername(){
 }
 studentForm.elements.name.addEventListener('input',()=>{clearTimeout(usernameTimer);++usernameGeneration;if(editing===null&&!usernameManual)usernameTimer=setTimeout(suggestStudentUsername,300)});
 studentForm.elements.username.addEventListener('input',()=>{usernameManual=true;++usernameGeneration;clearTimeout(usernameTimer)});
-function editStudent(row=null){const picker=studentForm.elements.timezone;const saved=row?.timezone||'';picker.replaceChildren(new Option('По умолчанию для учеников',''));const zones=new Set(['UTC','Europe/Moscow','Europe/Berlin','Asia/Vladivostok',...(Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):[]),...(saved?[saved]:[])]);const names={'Europe/Moscow':'Москва','Europe/Berlin':'Берлин','Asia/Vladivostok':'Владивосток','Asia/Yekaterinburg':'Екатеринбург','Asia/Novosibirsk':'Новосибирск','Asia/Irkutsk':'Иркутск','Asia/Krasnoyarsk':'Красноярск','Asia/Kamchatka':'Камчатка','Europe/Samara':'Самара','Europe/Kaliningrad':'Калининград'};for(const zone of [...zones].sort())picker.add(new Option(names[zone]?names[zone]+' ('+zone+')':zone,zone));picker.value=saved;clearCredentials();editing=row?.id??null;usernameManual=!!row;++usernameGeneration;clearTimeout(usernameTimer);studentForm.reset();studentFormStatus.textContent='';const login=studentForm.elements.username;const legacy=!!row&&!/^[a-zA-Z0-9._-]{3,40}$/.test(row.username);login.readOnly=legacy;login.maxLength=legacy?254:40;login.minLength=legacy?1:3;if(legacy){login.removeAttribute('pattern');studentFormStatus.textContent='Сохранён прежний логин для входа. Остальные данные можно редактировать.';}else login.setAttribute('pattern','[a-zA-Z0-9._\\-]+');document.querySelector('#student-editor').hidden=false;document.querySelector('#student-editor-title').textContent=row?'Редактировать ученика':'Добавить ученика';if(row){for(const field of ['name','username','email','phone','parent_name','parent_phone','school_grade','default_duration_minutes','timezone'])studentForm.elements[field].value=row[field]??'';studentForm.elements.price.value=(row.default_price_kopecks/100).toFixed(2);}studentForm.scrollIntoView({block:'start'});studentForm.elements.name.focus();}
+const studentZoneSearch=document.querySelector('#student-zone-search');
+const studentZoneStatus=document.querySelector('#student-zone-status');
+let studentZoneOptions=[];
+function filterStudentZones(){
+ const picker=studentForm.elements.timezone,selected=picker.value;
+ const query=studentZoneSearch.value.trim().toLowerCase().replaceAll('ё','е');
+ const matches=studentZoneOptions.filter(option=>!query||option.label.toLowerCase().replaceAll('ё','е').includes(query));
+ picker.replaceChildren();
+ // Retain the chosen value even when the search does not match it.
+ if(!matches.some(option=>option.value===selected)){
+  const kept=studentZoneOptions.find(option=>option.value===selected);
+  if(kept){const option=new Option(kept.label,kept.value);option.hidden=true;picker.add(option);}
+ }
+ for(const option of matches)picker.add(new Option(option.label,option.value));
+ picker.value=selected;
+ picker.size=query?Math.min(6,Math.max(2,matches.length)):1;
+ studentZoneStatus.textContent=query?(matches.length?'Найдено: '+matches.length+'. Выберите часовой пояс.':'Ничего не найдено. Попробуйте другой город или название зоны.'):'Москва и Берлин — в начале списка.';
+}
+studentZoneSearch.addEventListener('input',filterStudentZones);
+studentForm.elements.timezone.addEventListener('change',()=>{
+ studentZoneSearch.value='';filterStudentZones();
+ studentZoneStatus.textContent='Выбрано: '+studentForm.elements.timezone.selectedOptions[0].textContent;
+});
+function editStudent(row=null){
+ const picker=studentForm.elements.timezone,saved=row?.timezone||'';
+ const frequent=['Europe/Moscow','Europe/Berlin'];
+ const zones=new Set([...frequent,'UTC','Asia/Vladivostok',...(Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):[]),...(saved?[saved]:[])]);
+ const names={'Europe/Moscow':'Москва','Europe/Berlin':'Берлин','Europe/Volgograd':'Волгоград','Asia/Vladivostok':'Владивосток','Asia/Yekaterinburg':'Екатеринбург','Asia/Novosibirsk':'Новосибирск','Asia/Irkutsk':'Иркутск','Asia/Krasnoyarsk':'Красноярск','Asia/Kamchatka':'Петропавловск-Камчатский','Europe/Samara':'Самара','Europe/Kaliningrad':'Калининград','Asia/Omsk':'Омск','Asia/Barnaul':'Барнаул','Asia/Tomsk':'Томск','Asia/Chita':'Чита','Asia/Yakutsk':'Якутск','Asia/Magadan':'Магадан','Asia/Sakhalin':'Сахалин','Europe/Saratov':'Саратов','Europe/Ulyanovsk':'Ульяновск','Europe/Astrakhan':'Астрахань','Europe/Paris':'Париж','Europe/London':'Лондон','Europe/Rome':'Рим','Europe/Madrid':'Мадрид','Europe/Warsaw':'Варшава','Europe/Prague':'Прага','Europe/Kiev':'Киев','Europe/Kyiv':'Киев','Asia/Dubai':'Дубай','Asia/Almaty':'Алматы','Asia/Tbilisi':'Тбилиси','Asia/Yerevan':'Ереван','Europe/Istanbul':'Стамбул','America/New_York':'Нью-Йорк','America/Los_Angeles':'Лос-Анджелес'};
+ studentZoneOptions=[{label:'По умолчанию для учеников',value:''},...[...frequent,...[...zones].filter(zone=>!frequent.includes(zone)).sort()].map(zone=>({label:names[zone]?names[zone]+' ('+zone+')':zone,value:zone}))];
+ studentZoneSearch.value='';picker.replaceChildren(...studentZoneOptions.map(option=>new Option(option.label,option.value)));picker.value=saved;filterStudentZones();
+ clearCredentials();editing=row?.id??null;usernameManual=!!row;++usernameGeneration;clearTimeout(usernameTimer);studentForm.reset();studentFormStatus.textContent='';const login=studentForm.elements.username;const legacy=!!row&&!/^[a-zA-Z0-9._-]{3,40}$/.test(row.username);login.readOnly=legacy;login.maxLength=legacy?254:40;login.minLength=legacy?1:3;if(legacy){login.removeAttribute('pattern');studentFormStatus.textContent='Сохранён прежний логин для входа. Остальные данные можно редактировать.';}else login.setAttribute('pattern','[a-zA-Z0-9._\\-]+');document.querySelector('#student-editor').hidden=false;document.querySelector('#student-editor-title').textContent=row?'Редактировать ученика':'Добавить ученика';if(row){for(const field of ['name','username','email','phone','parent_name','parent_phone','school_grade','default_duration_minutes','timezone'])studentForm.elements[field].value=row[field]??'';studentForm.elements.price.value=(row.default_price_kopecks/100).toFixed(2);}studentForm.scrollIntoView({block:'start'});studentForm.elements.name.focus();}
 document.querySelector('#create-student').onclick=()=>editStudent();
 document.querySelector('#cancel-editor').onclick=()=>{document.querySelector('#student-editor').hidden=true;studentForm.reset();};
 document.querySelector('#close-credentials').onclick=clearCredentials;
