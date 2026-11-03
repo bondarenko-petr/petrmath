@@ -643,3 +643,11 @@ The server's lifespan starts one background scheduler per process, checking once
 Deletion requires all of the following: verified Drive archive; successful notice to the student's current confirmed email; at least `grace_days` after both verification and notification; source age at least `retention_days`; matching source identifiers, owner, size and SHA-256. Fresh files added to an old lesson are not deleted. Archive contents and source hashes are checked again before cleanup. Changed/unavailable sources, unavailable/corrupt Drive, inactive pupils, email problems and toggle-off all defer deletion. Increased retention/grace periods are checked again immediately before unlinking. Originals in trial archives are still protected by the ordinary retention age.
 
 Archive references are committed to `material_files` before unlinking source bytes. A crash or disk error can leave extra local copies for a retry, but keeps a usable archive route. `deleted_at` retains its distinct meaning of an administrator removing an attachment; archival uses `archive_id`/`archived_at`. Lesson history and live text remain, and attachment links switch to the authorized ZIP download. Results and blocking reasons appear in admin archive rows and the settings log. The ZIP remains in Drive indefinitely; there is no automatic remote deletion. Switching Drive accounts does not migrate archives. After migration and restart, first review the archive table, then enable cleanup and run a check; the initial notice starts the grace period rather than deleting sources immediately.
+
+## Автоматическое обновление сервера
+
+Подготовлен GitHub Actions workflow для обновления `prosto5.ru` после тестов и
+изменений в `main`. По умолчанию развёртывание выключено до настройки отдельного
+SSH-ключа и repository variables. Полная инструкция: [deploy/README.md](deploy/README.md).
+Серверный `.env`, MySQL и материалы сохраняются; новые SQL-миграции требуют ручной
+проверки. Неудачный запуск вызывает попытку отката кода и Python-окружения.

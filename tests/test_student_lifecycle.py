@@ -1,4 +1,5 @@
 import sqlite3
+import time
 import unittest
 from uuid import uuid4
 from unittest.mock import patch
@@ -23,6 +24,10 @@ class StudentLifecycleTests(unittest.TestCase):
         return self.client.request('DELETE',f'/api/admin/students/{self.id}',json={'username':username or self.data['username']},headers=self.headers)
 
     def test_archive_tabs_restore_and_future_lessons_remain(self):
+        # Keep this future-lesson assertion valid after the original fixture date.
+        with database() as (c,p):
+            start=int(time.time())+7*86400
+            c.execute('UPDATE lessons SET starts_at=?,ends_at=? WHERE id=?',(start,start+3600,self.next_id))
         pupil=TestClient(app);pupil.post('/api/auth/login',json=self.data,headers=self.headers)
         self.assertEqual(pupil.get('/api/auth/me').status_code,200)
         self.assertEqual(self.archive().status_code,200)
