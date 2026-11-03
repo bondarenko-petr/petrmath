@@ -23,7 +23,7 @@ async def lifespan(app):
     try:yield
     finally:stop_worker()
 
-app = FastAPI(lifespan=lifespan,title="Круг Пи — математика, ОГЭ и ЕГЭ")
+app = FastAPI(lifespan=lifespan,title="Просто 5 — математика, ОГЭ и ЕГЭ")
 ROOT = Path(__file__).resolve().parent
 
 
