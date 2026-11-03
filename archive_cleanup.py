@@ -15,17 +15,69 @@ import drive_settings as drive
 from mailer import send_archive_notice
 from material_archives import remote_download,digest
 from materials import storage as material_storage
+import archive_lifecycle as lifecycle
 
 logger=logging.getLogger(__name__)
 
 def notice_target(archive):
-    with database() as (c,p):
-        c.execute(f'SELECT u.email,u.is_active,v.email AS verified FROM users u LEFT JOIN verified_emails v ON v.user_id=u.id WHERE u.id={p}',(archive['student_id'],));user=c.fetchone()
-    if not user or not user['is_active'] or not user['email'] or user['email'].lower()!=user['verified']:raise ValueError('Подтверждённая почта активного ученика недоступна. Очистка отложена.')
+    user=lifecycle.identity(archive)
+    if not lifecycle.email_ready(user):raise ValueError(lifecycle.EMAIL_ERROR)
     return user['email'].lower()
 
-def save_error(archive_id,message):
-    with database() as (c,p):c.execute(f'UPDATE material_archives SET cleanup_error={p} WHERE id={p}',(message[:500],archive_id))
+def save_error(archive_id,message,stage='cleanup'):
+    with database() as (c,p):
+        c.execute(f'SELECT * FROM material_archives WHERE id={p}',(archive_id,));row=c.fetchone()
+    if row:lifecycle.record(dict(row),message,stage)
+
+def safe_error(error):
+    return str(error) if isinstance(error,ValueError) and str(error)[:1].isupper() and not str(error).isascii() else 'Проверка Drive, почты или исходников не удалась. Повторите проверку позже.'
+
+def notify_archive(archive,config):
+    user=lifecycle.identity(archive)
+    try:
+        email=notice_target(archive)
+        inspect_drive(archive,config)
+        if not archive['notified_at'] or archive['notified_email']!=email:
+            send_archive_notice(email,archive['filename'])
+            with database() as (c,p):
+                c.execute(f'UPDATE material_archives SET notified_at={p},notified_email={p} WHERE id={p}',(int(time.time()),email,archive['id']))
+        lifecycle.record(archive,stage='notification',user=user)
+        return True
+    except Exception as error:
+        lifecycle.record(archive,safe_error(error),'notification',user)
+        return False
+
+def run_notifications(archive_id=None):
+    """Mail-only path: never calls purge, even for already-mature archives."""
+    with drive.storage() as config:
+        if archive_id is None and not config.get('deletion_enabled'):return {'disabled':True}
+    folder=Path(os.getenv('GOOGLE_DRIVE_PRIVATE_DIR',str(ROOT/'data'/'google-drive'))).resolve()
+    with open(folder/'cleanup.lock','a') as lock:
+        os.chmod(folder/'cleanup.lock',0o600)
+        try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:return {'busy':True}
+        with database() as (c,p):
+            query="SELECT * FROM material_archives WHERE status='verified' AND cleanup_at IS NULL"
+            c.execute(query+(f' AND id={p}' if archive_id else ''),(archive_id,) if archive_id else ())
+            rows=[dict(row) for row in c.fetchall()]
+        result={'processed':0,'errors':0}
+        for archive in rows:
+            with drive.storage() as current:config=json.loads(json.dumps(current))
+            if archive_id is None and not config.get('deletion_enabled'):break
+            check=config.get('archive_checks',{}).get(archive['id'],{})
+            user=lifecycle.identity(archive)
+            if archive_id is None:
+                if archive['notified_at'] and lifecycle.email_ready(user) and archive['notified_email']==user['email'].lower() and not (archive['cleanup_error'] and check.get('stage','notification')=='notification'):continue
+                if check.get('identity')==lifecycle.fingerprint(user) and check.get('retry_at',0)>int(time.time()):continue
+            result['processed']+=1
+            if not notify_archive(archive,config):result['errors']+=1
+        return result
+
+def run_notice_request(archive_id):
+    result=run_notifications(archive_id)
+    if result.get('busy'):
+        save_error(archive_id,'Выполняется другая операция с архивами. Повторите проверку позже.','notification')
+    return result
 
 def inspect_drive(archive,config):
     connection=config.get('connection')
@@ -116,20 +168,23 @@ def run_cycle(force=False):
                     snapshot=json.loads(json.dumps(latest))
                 result['processed']+=1
                 try:
+                    stage='notification'
                     email=notice_target(archive)
                     if not archive['notified_at'] or archive['notified_email']!=email:
-                        inspect_drive(archive,snapshot)
-                        send_archive_notice(email,archive['filename'])
-                        with database() as (c,p):c.execute(f'UPDATE material_archives SET notified_at={p},notified_email={p},cleanup_error={p} WHERE id={p}',(int(time.time()),email,'',archive['id']))
+                        if not notify_archive(archive,snapshot):result['errors']+=1
                         continue
-                    if now-max(archive['verified_at'] or archive['updated_at'],archive['notified_at'])<snapshot.get('grace_days',14)*86400:continue
+                    stage='cleanup'
+                    deadline=lifecycle.not_before(archive,snapshot)
+                    if deadline is None:raise ValueError('Не удалось рассчитать срок очистки.')
+                    if now<deadline:continue
                     inspect_drive(archive,snapshot)
                     if purge(archive,snapshot,now):result['cleaned']+=1
+                    lifecycle.record(archive,stage='cleanup')
                 except Exception as error:
                     result['errors']+=1
                     # Only deliberately constructed local errors may be displayed.
-                    message=str(error) if isinstance(error,ValueError) and str(error)[:1].isupper() and not str(error).isascii() else 'Проверка Drive, почты или исходников не удалась. Очистка отложена.'
-                    save_error(archive['id'],message)
+                    message=safe_error(error)
+                    save_error(archive['id'],message,stage)
         except Exception:
             result['errors']+=1;logger.warning('Archive cleanup cycle failed; source files are preserved where not processed')
         with drive.storage() as config:
@@ -145,7 +200,9 @@ def start_worker():
     _stop.clear()
     def work():
         while not _stop.wait(60):
-            try:run_cycle()
+            try:
+                run_notifications()
+                run_cycle()
             except Exception:logger.warning('Archive cleanup worker unavailable; check migration and configuration')
     _thread=threading.Thread(target=work,name='archive-cleanup',daemon=True);_thread.start()
 

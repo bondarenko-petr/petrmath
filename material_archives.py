@@ -22,6 +22,7 @@ from lessons import member
 from materials import storage as material_storage
 from student_timezones import student_zone
 import drive_settings as drive
+import archive_lifecycle as lifecycle
 
 router=APIRouter(prefix='/api/material-archives',tags=['Material archives'])
 MAX_BYTES=200*1024*1024
@@ -174,20 +175,42 @@ def create(data:ArchiveInput,request:Request,tasks:BackgroundTasks,user=Depends(
 @router.get('')
 def list_archives(response:Response,student_id:int|None=Query(None,gt=0),limit:int=Query(20,ge=1,le=100),offset:int=Query(0,ge=0),errors_only:bool=False,user=Depends(member)):
     owner=user['id'] if user['role']=='student' else student_id
-    condition='1=1';args=[]
-    if owner is not None:condition+=' AND student_id=%s';args.append(owner)
+    with drive.storage() as data:config=json.loads(json.dumps(data))
     with database() as (c,p):
-        condition=condition.replace('%s',p)
-        if user['role']=='student':condition+=" AND status='verified'"
-        elif errors_only:condition+=" AND status='failed'"
-        c.execute('SELECT COUNT(*) AS n FROM material_archives WHERE '+condition,tuple(args));total=c.fetchone()['n']
-        c.execute('SELECT id,student_id,(SELECT name FROM users WHERE users.id=material_archives.student_id) AS student_name,status,filename,file_count,lesson_count,size,created_at,updated_at,error,notified_at,cleanup_at,cleanup_error,purged_count FROM material_archives WHERE '+condition+f' ORDER BY created_at DESC,id DESC LIMIT {p} OFFSET {p}',(*args,limit,offset))
+        condition='1=1';args=[]
+        if owner is not None:condition+=f' AND a.student_id={p}';args.append(owner)
+        if user['role']=='student':condition+=" AND a.status='verified'"
+        elif errors_only:
+            collate='utf8mb4_bin' if p!='?' else 'BINARY'
+            eligible=f"u.is_active=1 AND u.email IS NOT NULL AND LOWER(u.email) COLLATE {collate}=v.email COLLATE {collate}"
+            condition+=f" AND (a.status='failed' OR (a.cleanup_error<>'' AND NOT COALESCE((a.cleanup_error={p} AND {eligible}),0)))"
+            args.append(lifecycle.EMAIL_ERROR)
+        source=' FROM material_archives a LEFT JOIN users u ON u.id=a.student_id LEFT JOIN verified_emails v ON v.user_id=u.id'
+        c.execute('SELECT COUNT(*) AS n'+source+' WHERE '+condition,tuple(args));total=c.fetchone()['n']
+        c.execute('SELECT a.id,a.student_id,u.name AS student_name,a.status,a.filename,a.file_count,a.lesson_count,a.size,a.created_at,a.updated_at,a.error,a.notified_at,a.cleanup_at,a.cleanup_error,a.purged_count,a.verified_at,a.notified_email,a.manifest,u.email AS current_email,u.is_active AS student_active,v.email AS confirmed_email'+source+' WHERE '+condition+f' ORDER BY a.created_at DESC,a.id DESC LIMIT {p} OFFSET {p}',(*args,limit,offset))
         rows=[dict(row) for row in c.fetchall()]
-        for row in rows:
-            period=re.search(r'(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})',row['filename'])
-            row['period_from']=period[1] if period else None;row['period_to']=period[2] if period else None
+    for row in rows:
+        row.update(lifecycle.presentation(row,config))
+        period=re.search(r'(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})',row['filename'])
+        row['period_from']=period[1] if period else None;row['period_to']=period[2] if period else None
+        for key in ('current_email','confirmed_email','student_active','manifest','notified_email'):row.pop(key,None)
     response.headers['Cache-Control']='no-store'
     return {'items':rows,'total':total}
+
+@router.post('/{archive_id}/notify',status_code=202)
+def notify(archive_id:str,request:Request,tasks:BackgroundTasks,user=Depends(require_admin)):
+    guard(request);throttle(request)
+    with database() as (c,p):
+        c.execute(f'SELECT status,cleanup_at FROM material_archives WHERE id={p}',(archive_id,));row=c.fetchone()
+    if not row:raise HTTPException(404,'Архив не найден')
+    if row['status']!='verified' or row['cleanup_at']:raise HTTPException(409,'Проверка уведомления доступна до очистки проверенного архива')
+    with drive.storage() as config:
+        check=config.get('archive_checks',{}).get(archive_id,{})
+        if int(time.time())-max(check.get('notice_attempt_at',0),check.get('notice_requested_at',0))<60:raise HTTPException(429,'Повторная проверка доступна через минуту')
+        config.setdefault('archive_checks',{}).setdefault(archive_id,{})['notice_requested_at']=int(time.time())
+    from archive_cleanup import run_notice_request
+    tasks.add_task(run_notice_request,archive_id)
+    return {'status':'started','message':'Проверка и отправка уведомления запущены. Удаление файлов не выполняется.'}
 
 @router.get('/{archive_id}/download')
 def download(archive_id:str,request:Request,user=Depends(member)):

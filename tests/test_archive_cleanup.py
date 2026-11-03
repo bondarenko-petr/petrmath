@@ -87,3 +87,78 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(cleanup.run_cycle(force=True)['cleaned'],0);self.assertTrue(list(self.folder.iterdir()))
         with drive.storage() as data:data['grace_days']=14;data['connection']['email']='other@example.com'
         self.assertEqual(cleanup.run_cycle(force=True)['errors'],1);self.assertTrue(list(self.folder.iterdir()))
+
+    def test_manual_notice_never_purges_even_if_mature(self):
+        self.matured()
+        with patch('archive_cleanup.purge',side_effect=AssertionError('must not delete')):
+            result=self.client.post('/api/material-archives/'+self.archive+'/notify',headers=self.headers)
+        self.assertEqual(result.status_code,202,result.text)
+        self.sender.assert_not_called()  # Existing handoff is not duplicated.
+        self.assertTrue(list(self.folder.iterdir()))
+        self.assertIsNone(self.listing()[0]['cleanup_at'])
+        self.assertEqual(self.client.post('/api/material-archives/'+self.archive+'/notify',headers=self.headers).status_code,429)
+
+    def test_stale_email_error_becomes_history_then_clears(self):
+        from archive_lifecycle import EMAIL_ERROR
+        with database() as (c,p):c.execute('UPDATE material_archives SET cleanup_error=?',(EMAIL_ERROR,))
+        row=self.listing()[0]
+        self.assertEqual(row['notification_status'],'pending')
+        self.assertEqual(row['notification_error'],'')
+        self.assertEqual(row['previous_error'],EMAIL_ERROR)
+        self.assertEqual(self.client.get('/api/material-archives?errors_only=true').json()['total'],0)
+        self.client.post('/api/material-archives/'+self.archive+'/notify',headers=self.headers)
+        row=self.listing()[0]
+        self.assertEqual(row['cleanup_error'],'')
+        self.assertEqual(row['notification_status'],'sent')
+        self.assertEqual(row['cleanup_status'],'waiting_period')
+        self.assertTrue(row['last_check_at'])
+        with drive.storage() as config:self.assertTrue(any('ошибка устранена' in e['message'] for e in config['events']))
+
+    def test_confirmation_retries_mail_without_waiting_daily_cleanup(self):
+        with database() as (c,p):c.execute('DELETE FROM verified_emails')
+        cleanup.run_notifications()
+        self.sender.assert_not_called()
+        self.assertEqual(cleanup.run_notifications()['processed'],0)  # Backoff while unchanged.
+        with database() as (c,p):c.execute('INSERT INTO verified_emails VALUES (?,?,?)',(self.id,self.data['username'],''))
+        with drive.storage() as config:config['cleanup_last_started']=int(time.time())
+        self.assertTrue(cleanup.run_cycle().get('waiting'))
+        with patch('archive_cleanup.purge',side_effect=AssertionError('mail path must not delete')):
+            self.assertEqual(cleanup.run_notifications()['errors'],0)
+        self.sender.assert_called_once()
+        self.assertEqual(self.listing()[0]['notification_status'],'sent')
+        self.assertTrue(list(self.folder.iterdir()))
+
+    def test_clear_source_error_only_after_source_recheck(self):
+        self.matured()
+        with database() as (c,p):c.execute('UPDATE material_archives SET cleanup_error=?',('Исходный файл изменился. Очистка остановлена.',))
+        self.client.post('/api/material-archives/'+self.archive+'/notify',headers=self.headers)
+        self.assertTrue(self.listing()[0]['cleanup_issue'])
+        self.assertTrue(list(self.folder.iterdir()))
+
+    def test_deadline_accounts_for_both_file_age_and_grace(self):
+        import json
+        now=int(time.time());self.matured()
+        with database() as (c,p):
+            c.execute('SELECT manifest FROM material_archives');manifest=json.loads(c.fetchone()['manifest'])
+            manifest[0]['files'][0]['created_at']=now
+            c.execute('UPDATE material_archives SET manifest=?',(json.dumps(manifest),))
+        row=self.listing()[0]
+        self.assertEqual(row['cleanup_not_before'],now+28*86400)
+        self.assertEqual(row['cleanup_status'],'waiting_period')
+        with patch('archive_cleanup.purge',side_effect=AssertionError('not before displayed date')):
+            self.assertEqual(cleanup.run_cycle(force=True)['cleaned'],0)
+
+    def test_manual_notice_requires_admin_and_csrf(self):
+        url='/api/material-archives/'+self.archive+'/notify'
+        self.assertEqual(self.client.post(url).status_code,403)
+        self.login_student()
+        self.assertEqual(self.client.post(url,headers=self.headers).status_code,403)
+
+    def test_manual_notice_works_with_cleanup_disabled(self):
+        with drive.storage() as config:config['deletion_enabled']=False
+        self.assertTrue(cleanup.run_notifications().get('disabled'))
+        with patch('archive_cleanup.purge',side_effect=AssertionError('must not delete')):
+            self.assertEqual(self.client.post('/api/material-archives/'+self.archive+'/notify',headers=self.headers).status_code,202)
+        self.sender.assert_called_once()
+        self.assertEqual(self.listing()[0]['cleanup_status'],'disabled')
+        self.assertTrue(list(self.folder.iterdir()))
