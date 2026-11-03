@@ -80,7 +80,8 @@ fi
 ''')
         for name in ('flock', 'sleep', 'sudo'):
             self.executable(self.bin / name, '#!/bin/bash\nexit 0\n')
-        self.executable(self.bin / 'systemctl', '#!/bin/bash\nexit 0\n')
+        # Simulate minimal Debian: unprivileged systemctl cannot reach the bus.
+        self.executable(self.bin / 'systemctl', '#!/bin/bash\necho bus-unavailable >&2\nexit 77\n')
         self.executable(self.bin / 'curl', f'''#!/bin/bash
 if [[ -e "{self.root}/fail-new" && $(readlink "{self.app}/.venv") == "{self.venvs}/"* ]]; then exit 22; fi
 exit 0

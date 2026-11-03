@@ -20,7 +20,7 @@ TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT
 cat > "$TMP" <<'EOF'
 prosto5-deploy ALL=(petrmath) NOPASSWD: /usr/local/libexec/petrmath-deploy *
-petrmath ALL=(root) NOPASSWD: /usr/bin/systemctl stop petrmath.service, /usr/bin/systemctl start petrmath.service, /usr/bin/systemctl restart petrmath.service
+petrmath ALL=(root) NOPASSWD: /usr/bin/systemctl stop petrmath.service, /usr/bin/systemctl start petrmath.service, /usr/bin/systemctl restart petrmath.service, /usr/bin/systemctl is-active --quiet petrmath.service
 EOF
 visudo -cf "$TMP"
 install -o root -g root -m 440 "$TMP" /etc/sudoers.d/petrmath-deploy

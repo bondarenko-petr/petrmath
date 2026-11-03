@@ -19,7 +19,7 @@ git fetch origin main
 [[ $(git rev-parse origin/main) == "$TARGET" ]] || { echo 'Commit is no longer latest main; deploy the newest workflow run' >&2; exit 1; }
 OLD=$(git rev-parse HEAD)
 if [[ $OLD == "$TARGET" ]]; then
-    /usr/bin/systemctl is-active --quiet petrmath.service
+    sudo -n /usr/bin/systemctl is-active --quiet petrmath.service
     curl --fail --silent --show-error https://prosto5.ru/api/health >/dev/null
     echo 'This commit is already deployed.'
     exit 0
@@ -120,12 +120,12 @@ ln -s "$NEW_ENV" .venv
 git checkout --detach "$TARGET"
 sudo -n /usr/bin/systemctl start petrmath.service
 for attempt in $(seq 1 20); do
-    if /usr/bin/systemctl is-active --quiet petrmath.service && curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null; then
+    if sudo -n /usr/bin/systemctl is-active --quiet petrmath.service && curl --fail --silent http://127.0.0.1:8000/api/health >/dev/null; then
         break
     fi
     sleep 2
 done
-/usr/bin/systemctl is-active --quiet petrmath.service
+sudo -n /usr/bin/systemctl is-active --quiet petrmath.service
 curl --fail --silent --show-error http://127.0.0.1:8000/api/health >/dev/null
 # Confirm the application, using its own .env, can query the production DB.
 .venv/bin/python - <<'PY'

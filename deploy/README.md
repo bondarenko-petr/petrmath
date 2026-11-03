@@ -54,7 +54,7 @@ curl -fsS https://prosto5.ru/api/health
 `prosto5-deploy`, root-owned forced-command wrapper и рабочий скрипт. SSH-ключ
 не даёт shell, SFTP, туннелей или root-доступа: принимает только `deploy <SHA>`.
 Развёртывание выполняется от `petrmath`; sudo разрешает этому пользователю только
-stop/start/restart своей службы. Существующая `.env` и материалы не копируются и
+stop/start/restart и read-only is-active своей службы. Существующая `.env` и материалы не копируются и
 не заменяются. Учётная запись SSH не может редактировать ограничения своего ключа.
 Повторный install заменит разрешённый ключ и установленные копии скриптов.
 
@@ -160,3 +160,14 @@ runuser -u petrmath -- git -C /srv/petrmath/app rev-parse HEAD
 ключа удалите его строку из `/var/lib/prosto5-deploy/.ssh/authorized_keys`.
 MySQL, материалы, OAuth-настройки и `.env` требуют самостоятельных защищённых
 резервных копий: автодеплой не синхронизирует локальную базу и не заменяет backup.
+
+### Минимальная Debian: Failed to connect to bus
+
+Если deploy останавливается после Git fetch с `Failed to connect to bus: No such
+file or directory`, SSH уже работает. На минимальной Debian у непривилегированного
+пользователя может отсутствовать доступный system bus. Проверки is-active теперь
+выполняются через sudo, как start/stop/restart; разрешена только точная команда
+`/usr/bin/systemctl is-active --quiet petrmath.service`. После принятия исправления
+обновите код и повторите `bash deploy/install.sh /root/prosto5-deploy.pub` под root:
+нужны и обновлённый worker, и sudoers. Затем запустите новый workflow для main.
+Не перезапускайте старый run с устаревшим SHA, если main уже изменился.
