@@ -1,6 +1,5 @@
 """Manual ZIP archives. Originals are never removed or modified."""
 import hashlib
-import html
 import json
 import os
 from pathlib import Path
@@ -23,6 +22,7 @@ from materials import storage as material_storage
 from student_timezones import student_zone
 import drive_settings as drive
 import archive_lifecycle as lifecycle
+from archive_contents import render_contents
 
 router=APIRouter(prefix='/api/material-archives',tags=['Material archives'])
 MAX_BYTES=200*1024*1024
@@ -58,9 +58,9 @@ def select_materials(c,p,student,days,include_recent):
     if not result:raise HTTPException(409,'Подходящих файлов нет: они ещё не достигли срока хранения или уже включены в проверенный архив.')
     return result
 
-def build_zip(path,manifest,tz):
+def build_zip(path,manifest,tz,student_name=""):
     from zoneinfo import ZoneInfo
-    root=material_storage();index=[];expected=[];stamp=datetime.now(timezone.utc).isoformat()
+    root=material_storage();index=[];expected=[]
     with ZipFile(path,'w',ZIP_DEFLATED) as archive:
         for lesson in manifest:
             date=datetime.fromtimestamp(lesson['starts_at'],ZoneInfo(tz)).strftime('%Y-%m-%d_%H-%M')
@@ -88,8 +88,8 @@ def build_zip(path,manifest,tz):
                         h.update(chunk);output.write(chunk)
                 if written!=file['size']:raise ValueError('source_changed')
                 file['sha256']=h.hexdigest();file['archive_path']=name;expected.append(name);links.append(name)
-            index.append('<h2>'+html.escape(date+' · '+(lesson['topic'] or 'Математика'))+'</h2><ul>'+''.join('<li><a href="'+quote(name,safe='/')+'">'+html.escape(name.split('/')[-1])+'</a></li>' for name in links)+'</ul>')
-        archive.writestr('Содержание.html','<!doctype html><meta charset="utf-8"><title>Материалы уроков</title><h1>Задания и конспекты</h1><p>Часовой пояс: '+html.escape(tz)+'</p><p>Создано (UTC): '+stamp+'</p>'+''.join(index))
+            index.append({'starts_at':lesson['starts_at'],'topic':lesson['topic'],'links':links})
+        archive.writestr('Содержание.html',render_contents(index,tz,student_name))
         archive.writestr('manifest.json',json.dumps([{'lesson_id':row['id'],'topic':row['topic'],'starts_at':row['starts_at'],'timezone':tz,'files':[{key:file.get(key) for key in ('id','filename','category','size','sha256','archive_path')} for file in row['files']]} for row in manifest],ensure_ascii=False,default=str))
     with ZipFile(path) as archive:
         if archive.testzip() is not None or set(archive.namelist())!=set(expected+['Содержание.html','manifest.json']):raise ValueError('zip_invalid')
@@ -131,8 +131,12 @@ def update(archive_id,status,**values):
 def create_job(archive_id,manifest,tz,filename,config):
     file_id=None;headers=None
     try:
+        with database() as (c,p):
+            c.execute(f'SELECT u.name FROM users u JOIN material_archives a ON a.student_id=u.id WHERE a.id={p}',(archive_id,))
+            student=c.fetchone()
+            student_name=student['name'] if student else ''
         with tempfile.TemporaryDirectory(prefix='krug-pi-archive-') as folder:
-            path=Path(folder)/'archive.zip';build_zip(path,manifest,tz)
+            path=Path(folder)/'archive.zip';build_zip(path,manifest,tz,student_name)
             size=path.stat().st_size
             if size>MAX_BYTES+10*1024*1024:raise ValueError('archive_too_large')
             checksum=digest(path);update(archive_id,'uploading')
