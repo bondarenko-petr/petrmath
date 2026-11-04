@@ -191,13 +191,13 @@ def list_archives(response:Response,student_id:int|None=Query(None,gt=0),limit:i
             args.append(lifecycle.EMAIL_ERROR)
         source=' FROM material_archives a LEFT JOIN users u ON u.id=a.student_id LEFT JOIN verified_emails v ON v.user_id=u.id'
         c.execute('SELECT COUNT(*) AS n'+source+' WHERE '+condition,tuple(args));total=c.fetchone()['n']
-        c.execute('SELECT a.id,a.student_id,u.name AS student_name,a.status,a.filename,a.file_count,a.lesson_count,a.size,a.created_at,a.updated_at,a.error,a.notified_at,a.cleanup_at,a.cleanup_error,a.purged_count,a.verified_at,a.notified_email,a.manifest,u.email AS current_email,u.is_active AS student_active,v.email AS confirmed_email'+source+' WHERE '+condition+f' ORDER BY a.created_at DESC,a.id DESC LIMIT {p} OFFSET {p}',(*args,limit,offset))
+        c.execute('SELECT a.id,a.student_id,u.name AS student_name,a.status,a.filename,a.file_count,a.lesson_count,a.size,a.created_at,a.updated_at,a.error,a.notified_at,a.cleanup_at,a.cleanup_error,a.purged_count,a.verified_at,a.notified_email,a.manifest,a.drive_id,a.sha256,u.email AS current_email,u.is_active AS student_active,v.email AS confirmed_email'+source+' WHERE '+condition+f' ORDER BY a.created_at DESC,a.id DESC LIMIT {p} OFFSET {p}',(*args,limit,offset))
         rows=[dict(row) for row in c.fetchall()]
     for row in rows:
         row.update(lifecycle.presentation(row,config))
         period=re.search(r'(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})',row['filename'])
         row['period_from']=period[1] if period else None;row['period_to']=period[2] if period else None
-        for key in ('current_email','confirmed_email','student_active','manifest','notified_email'):row.pop(key,None)
+        for key in ('current_email','confirmed_email','student_active','manifest','notified_email','drive_id','sha256'):row.pop(key,None)
     response.headers['Cache-Control']='no-store'
     return {'items':rows,'total':total}
 

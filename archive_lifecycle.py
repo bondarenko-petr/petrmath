@@ -70,7 +70,8 @@ def presentation(row,config):
     elif deadline is None:cleanup='blocked'
     elif int(time.time())<deadline:cleanup='waiting_period'
     else:cleanup='ready'
-    return {'notification_status':notice,'cleanup_status':cleanup,'cleanup_not_before':deadline,
+    from archive_cloud import presentation as cloud_presentation
+    return {**cloud_presentation(row,config),'notification_status':notice,'cleanup_status':cleanup,'cleanup_not_before':deadline,
             'last_check_at':check.get('last_check_at'),'notification_error':notice_error,
             'cleanup_issue':cleanup_error,'previous_error':previous_error,
             'last_error_at':check.get('last_error_at'),'last_error':check.get('last_error') or previous_error}

@@ -67,7 +67,7 @@ def log(data,message):
 
 def public(data):
     connection=data.get('connection',{});config=effective_config(data)
-    return {'client_id':config.get('client_id',''),'secret_saved':bool(config.get('client_secret')),'config_source':'settings' if data.get('app_config') else 'environment','configured':all(config.get(key) for key in ('client_id','client_secret','redirect_uri')),'missing':[env for key,env in zip(('client_id','client_secret','redirect_uri'),FIELDS) if not config.get(key)],'redirect_uri':config.get('redirect_uri',''),'connected':bool(connection.get('refresh_token')),'email':connection.get('email',''),'folder_id':connection.get('folder_id',''),'folder_name':connection.get('folder_name',''),'retention_days':data.get('retention_days',28),'grace_days':data.get('grace_days',14),'mode':'manual','deletion_enabled':bool(data.get('deletion_enabled',False)),'cleanup_last_finished':data.get('cleanup_last_finished'),'cleanup_result':data.get('cleanup_result'),'events':data.get('events',[])}
+    return {'client_id':config.get('client_id',''),'secret_saved':bool(config.get('client_secret')),'config_source':'settings' if data.get('app_config') else 'environment','configured':all(config.get(key) for key in ('client_id','client_secret','redirect_uri')),'missing':[env for key,env in zip(('client_id','client_secret','redirect_uri'),FIELDS) if not config.get(key)],'redirect_uri':config.get('redirect_uri',''),'connected':bool(connection.get('refresh_token')),'email':connection.get('email',''),'folder_id':connection.get('folder_id',''),'folder_name':connection.get('folder_name',''),'retention_days':data.get('retention_days',28),'grace_days':data.get('grace_days',14),'mode':'manual','deletion_enabled':bool(data.get('deletion_enabled',False)),'cleanup_last_finished':data.get('cleanup_last_finished'),'cleanup_result':data.get('cleanup_result'),'events':data.get('events',[]),'cleanup_running':bool(data.get('cleanup_running_at') and int(time.time())-data['cleanup_running_at']<600),'cloud_retention_months':data.get('cloud_retention_months',2),'cloud_warning_days':data.get('cloud_warning_days',7),'cloud_deletion_enabled':bool(data.get('cloud_deletion_enabled',False)),'cloud_last_finished':data.get('cloud_last_finished'),'cloud_result':data.get('cloud_result'),'cloud_running':bool(data.get('cloud_running_at') and int(time.time())-data['cloud_running_at']<600)}
 
 @router.get('')
 def settings(response:Response,user=Depends(require_admin)):
@@ -197,10 +197,12 @@ def disconnect(request:Request,user=Depends(require_admin)):
 class CleanupMode(BaseModel):
     model_config=ConfigDict(extra='forbid')
     enabled:bool
+    confirmed:bool=False
 
 @router.post('/cleanup-mode')
 def cleanup_mode(values:CleanupMode,request:Request,user=Depends(require_admin)):
     guard(request)
+    if values.enabled and not values.confirmed:raise HTTPException(422,'Подтвердите включение автоматической очистки.')
     if values.enabled:
         from accounts import database
         with database() as (c,p):c.execute('SELECT verified_at,notified_at,cleanup_at FROM material_archives LIMIT 1');c.fetchall()
@@ -224,3 +226,38 @@ def cleanup_run(request:Request,tasks:BackgroundTasks,user=Depends(require_admin
     from archive_cleanup import run_cycle
     tasks.add_task(run_cycle,True)
     return {'status':'started'}
+
+
+class CloudRetention(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    cloud_retention_months:int=Field(2,ge=1,le=24)
+    cloud_warning_days:int=Field(7,ge=7,le=90)
+
+@router.put('/cloud-retention')
+def cloud_retention(values:CloudRetention,request:Request,user=Depends(require_admin)):
+    guard(request)
+    with storage() as data:
+        changed=any(data.get(key,default)!=getattr(values,key) for key,default in [('cloud_retention_months',2),('cloud_warning_days',7)])
+        data.update(values.model_dump())
+        if changed:
+            data['cloud_generation']=secrets.token_hex(16);data['cloud_last_started']=0
+        log(data,'Срок хранения ZIP: '+str(values.cloud_retention_months)+' календарных месяцев; предупреждение за '+str(values.cloud_warning_days)+' дней. Сохранение сроков не включает очистку.')
+        return public(data)
+
+@router.post('/cloud-cleanup-mode')
+def cloud_cleanup_mode(values:CleanupMode,request:Request,user=Depends(require_admin)):
+    guard(request)
+    if values.enabled:
+        if not values.confirmed:raise HTTPException(422,'Подтвердите безвозвратное автоматическое удаление ZIP.')
+        if any(not os.getenv(key) for key in ('SMTP_HOST','SMTP_USER','SMTP_PASSWORD','SMTP_FROM','SITE_URL')):raise HTTPException(422,'Сначала настройте SMTP и SITE_URL для предупреждений')
+        base=urlsplit(os.getenv('SITE_URL',''))
+        if base.scheme!='https' or not base.hostname or base.username or base.password or base.query or base.fragment:raise HTTPException(422,'Для предупреждений нужен корректный HTTPS SITE_URL')
+    with storage() as data:
+        if values.enabled:
+            configuration(data)
+            if not data.get('connection'):raise HTTPException(409,'Сначала подключите Google Диск')
+            if not data.get('cloud_deletion_enabled'):
+                data['cloud_generation']=secrets.token_hex(16);data['cloud_last_started']=0
+        data['cloud_deletion_enabled']=values.enabled
+        log(data,'Автоматическое удаление ZIP с Google Диска '+('включено. Сначала предупреждение и полный период ожидания.' if values.enabled else 'выключено.'))
+        return public(data)

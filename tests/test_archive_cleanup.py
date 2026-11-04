@@ -77,10 +77,10 @@ class CleanupTests(unittest.TestCase):
         env={'SMTP_HOST':'mail','SMTP_USER':'user','SMTP_PASSWORD':'password','SMTP_FROM':'site@example.com','SITE_URL':'https://example.com'}
         with drive.storage() as data:data['deletion_enabled']=False
         with patch.dict(os.environ,env):
-            response=self.client.post('/api/admin/archive-settings/cleanup-mode',json={'enabled':True},headers=self.headers)
+            response=self.client.post('/api/admin/archive-settings/cleanup-mode',json={'enabled':True,'confirmed':True},headers=self.headers)
             self.assertEqual(response.status_code,200,response.text);self.assertTrue(response.json()['deletion_enabled'])
         self.login_student()
-        self.assertEqual(self.client.post('/api/admin/archive-settings/cleanup-mode',json={'enabled':True},headers=self.headers).status_code,403)
+        self.assertEqual(self.client.post('/api/admin/archive-settings/cleanup-mode',json={'enabled':True,'confirmed':True},headers=self.headers).status_code,403)
     def test_increased_grace_and_different_drive_block_deletion(self):
         self.matured()
         with drive.storage() as data:data['grace_days']=30

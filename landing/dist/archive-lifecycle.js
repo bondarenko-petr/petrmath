@@ -11,6 +11,7 @@ window.renderArchiveLifecycle=function(row){
  add('Очистка',cleanup[row.cleanup_status]||'Ожидает проверки');
  if(row.cleanup_not_before&&!['disabled','completed'].includes(row.cleanup_status))add('Не ранее',date(row.cleanup_not_before));
  if(row.cleanup_at)add('Очищено',row.purged_count+' файлов · '+date(row.cleanup_at));
+ if(row.cloud_status){add('Автоочистка ZIP',({disabled:'Выключена',waiting_warning:'Ожидает срока предупреждения',warning_sent:'Предупреждение передано почтовому серверу',blocked:'Отложена'})[row.cloud_status]||'Ожидает проверки');if(row.cloud_expires_at)add('Срок хранения ZIP',date(row.cloud_expires_at));if(row.cloud_warning_at)add('Предупреждение передано',date(row.cloud_warning_at));if(row.cloud_delete_not_before)add('Удаление ZIP не ранее',date(row.cloud_delete_not_before));if(row.cloud_issue)add('Причина отсрочки ZIP',row.cloud_issue)}
  for(const [label,error] of [['Ошибка уведомления',row.notification_error],['Причина отсрочки',row.cleanup_issue]]){if(error){const p=document.createElement('p');p.className='archive-failure';p.textContent=label+': '+error;box.append(p)}}
  if(row.last_check_at)add('Последняя проверка',date(row.last_check_at));
  if(row.last_error){const details=document.createElement('details'),summary=document.createElement('summary'),p=document.createElement('p');summary.textContent='Предыдущая попытка'+(row.last_error_at?' · '+date(row.last_error_at):' · дата не сохранена');p.textContent=row.last_error;details.append(summary,p);box.append(details)}

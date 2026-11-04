@@ -636,13 +636,13 @@ Administrators now manage archives from the dedicated **Архивы матер�
 
 Run **`sql/archive_cleanup.sql`** as the MySQL database administrator before this update, then restart the server. SQLite upgrades additively. Keep database and Drive backups. No original data is removed by the migration. Existing verified archives use their verification timestamp (`updated_at` in older versions); notification and cleanup timestamps start empty.
 
-Under **Настройки → Архивирование → Автоматическая очистка**, enable cleanup explicitly. It is disabled by default. This enables notification emails as part of the lifecycle. Requires SMTP, an HTTPS SITE_URL, a connected Drive and a confirmed email for each active student. A checked ZIP is sent as a cabinet link, never a public Drive link. Successful SMTP handoff is recorded; it does not imply reading or downloading the email. Changing a student's email requires confirmation and a new notification; the grace clock restarts from that notification.
+Under **Настройки → Очистка сервера**, enable cleanup explicitly with confirmation. It is disabled by default. This enables notification emails as part of the lifecycle. Requires SMTP, an HTTPS SITE_URL, a connected Drive and a confirmed email for each active student. A checked ZIP is sent as a cabinet link, never a public Drive link. Successful SMTP handoff is recorded; it does not imply reading or downloading the email. Changing a student's email requires confirmation and a new notification; the grace clock restarts from that notification.
 
-The server's lifespan starts one background scheduler per process, checking once a minute and allowing a cleanup cycle once per day. An OS file lock serializes cycles across workers on the same host. The application must be running; missed runs execute after restart. **Запустить проверку сейчас** or `.venv/bin/python archive_cleanup.py` can trigger a cycle immediately, but only while cleanup is enabled. This does **not** automatically create archives: only existing verified archives are processed. Multiple servers require shared scheduling/storage coordination before deployment.
+The server's lifespan starts one background scheduler per process, checking once a minute and allowing a cleanup cycle once per day. An OS file lock serializes cycles across workers on the same host. The application must be running; missed runs execute after restart. The settings UI updates status automatically and has no manual cycle button. For maintenance, `.venv/bin/python archive_cleanup.py` can trigger a cycle immediately, but only while server cleanup is enabled. This does **not** automatically create archives: only existing verified archives are processed. Multiple servers require shared scheduling/storage coordination before deployment.
 
 Deletion requires all of the following: verified Drive archive; successful notice to the student's current confirmed email; at least `grace_days` after both verification and notification; source age at least `retention_days`; matching source identifiers, owner, size and SHA-256. Fresh files added to an old lesson are not deleted. Archive contents and source hashes are checked again before cleanup. Changed/unavailable sources, unavailable/corrupt Drive, inactive pupils, email problems and (for automatic cleanup) toggle-off all defer deletion. Increased retention/grace periods are checked again immediately before unlinking. Originals in trial archives are still protected by the ordinary retention age.
 
-Archive references are committed to `material_files` before unlinking source bytes. A crash or disk error can leave extra local copies for a retry, but keeps a usable archive route. `deleted_at` retains its distinct meaning of an administrator removing an attachment; archival uses `archive_id`/`archived_at`. Lesson history and live text remain, and attachment links switch to the authorized ZIP download. Results and blocking reasons appear in admin archive rows and the settings log. The ZIP remains in Drive indefinitely; there is no automatic remote deletion. Switching Drive accounts does not migrate archives. After migration and restart, first review the archive table, then enable cleanup and run a check; the initial notice starts the grace period rather than deleting sources immediately.
+Archive references are committed to `material_files` before unlinking source bytes. A crash or disk error can leave extra local copies for a retry, but keeps a usable archive route. `deleted_at` retains its distinct meaning of an administrator removing an attachment; archival uses `archive_id`/`archived_at`. Lesson history and live text remain, and attachment links switch to the authorized ZIP download. Results and blocking reasons appear in admin archive rows and the settings log. The ZIP remains in Drive while cloud cleanup is disabled. Cloud cleanup has its own independent opt-in and warning policy described below. Switching Drive accounts does not migrate archives. After migration and restart, first review the archive table, then enable cleanup and run a check; the initial notice starts the grace period rather than deleting sources immediately.
 
 ### Ручная очистка исходников отдельного архива
 
@@ -735,9 +735,50 @@ ZIP, безвозвратно (не в корзину). Это отдельно�
 доступна повторная проверка. Если файл уже отсутствует/недоступен в Drive —
 «Архив недоступен»; это не выдаётся за подтверждённое удаление приложением.
 
-Удаление ZIP пока **только ручное**. Автоматический срок удаления ZIP и уведомление
-перед удалением требуют отдельного согласования. Автоматическая очистка исходников
+Ручное удаление ZIP не зависит от автоматического режима. Дополнительно доступно
+отдельно включаемое автоматическое удаление по сроку с предварительным предупреждением. Автоматическая очистка исходников
 остаётся с прежним переключателем; эта доработка её не включает. SQL-миграция не
 нужна: новые статусы хранятся в существующем текстовом поле. Для проверки на сервере
 используйте отдельный тестовый архив с копиями файлов; сначала отмените удаление,
 затем подтвердите и убедитесь в сохранности локальных копий/текстов и отключении ZIP.
+
+
+### Независимые сроки и автоматические режимы хранения
+
+Настройки подключения Google Диска и журнал сохраняются. Вместо общей карточки
+очистки: два блока сроков и две независимые карточки режимов. Кнопки включения и
+выключения открывают подтверждение с последствиями. Старые «Сохранить режим»,
+«Запустить проверку сейчас» и «Обновить результаты» убраны; состояние обновляется
+каждые 15 секунд и при возвращении на вкладку, без сброса введённых параметров.
+Сохранение сроков не включает ни один режим. Текущие настройки сервера сохраняются;
+новый режим Google Диска по умолчанию выключен. Доработка сама не включает режимы.
+
+ZIP хранится по умолчанию **два календарных месяца с verified_at**, предупреждение
+за **семь дней**. В настройках: 1–24 месяца и 7–90 дней предупреждения. Календарные
+месяцы считаются в UTC с ограничением дня последним днём месяца (31 декабря + 2
+месяца = 28/29 февраля), не фиксированными 60 днями. Рабочий цикл облака — раз в час,
+проверяется фоновым процессом раз в минуту, пока сервер запущен.
+
+Сначала проверяется ZIP и передаётся письмо на текущую подтверждённую почту
+активного ученика. Удаление не ранее максимума даты окончания хранения и полного
+периода после успешной передачи предупреждения SMTP. Старые ZIP тоже ждут весь
+период; в том же цикле, где отправлено новое предупреждение, удаления нет.
+Ошибка почты, неподтверждённый/изменённый email, смена аккаунта Google и отключённый
+режим блокируют удаление. Перед самой операцией политика проверяется повторно.
+Повторное включение режима или изменение параметров требует нового предупреждения.
+
+Удаляется ZIP целиком и безвозвратно; существующие исходники с сервера, тексты и
+история не удаляются облачным циклом. После удаления скачивание отключается во
+всех кабинетах; неизвестный результат не выдаётся за подтверждённое удаление.
+Два переключателя независимы. Ручные удаления по конкретному архиву сохраняются.
+
+API: PUT `/api/admin/archive-settings/cloud-retention` и POST
+`/api/admin/archive-settings/cloud-cleanup-mode`. Включение обоих режимов требует
+`confirmed: true`; серверный режим использует прежний `/cleanup-mode`. Только
+администратор с постоянным паролем и CSRF-заголовком. Политика, эпохи включения,
+предупреждения и результаты сохраняются атомарно в закрытом settings.json Google
+Диска. Его нужно резервировать вместе с базой. SQL-миграция не требуется.
+
+После деплоя сначала проверить отображение выключенных режимов и отправку
+предупреждения на отдельном тестовом архиве. Не менять даты рабочих записей ради
+теста и не включать оба режима без просмотра подтверждения и сохранённых сроков.

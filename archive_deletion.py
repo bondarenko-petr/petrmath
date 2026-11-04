@@ -65,7 +65,7 @@ def set_status(archive_id,status,error='',archive=None):
                     c.execute(f'UPDATE material_files SET archive_id={p},archived_at=COALESCE(archived_at,{p}) WHERE id={p}',(archive_id,int(time.time()),file['id']))
         c.execute(f'UPDATE material_archives SET status={p},updated_at={p},error={p} WHERE id={p}',(status,int(time.time()),error,archive_id))
 
-def remove_zip(archive_id,admin_id,token=None,ack=False):
+def remove_zip(archive_id,admin_id,token=None,ack=False,*,automatic=False):
     with drive.storage():pass
     folder=Path(os.getenv('GOOGLE_DRIVE_PRIVATE_DIR',str(ROOT/'data'/'google-drive'))).resolve()
     with open(folder/'cleanup.lock','a') as lock:
@@ -84,6 +84,9 @@ def remove_zip(archive_id,admin_id,token=None,ack=False):
             if not connection or connection.get('email')!=archive['drive_account']:
                 raise HTTPException(409,'Подключите Google-аккаунт, в котором сохранён этот архив.')
             settings=json.loads(json.dumps(config))
+            if automatic:
+                from archive_cloud import validate_auto
+                validate_auto(archive,config)
             if token is not None:
                 confirmation=config.get('zip_delete_confirmations',{}).get(archive_id)
                 if not ack or not confirmation or confirmation['admin_id']!=admin_id or confirmation['expires_at']<=now or not secrets.compare_digest(confirmation['token'],token) or confirmation['signature']!=data['signature']:
@@ -101,6 +104,9 @@ def remove_zip(archive_id,admin_id,token=None,ack=False):
                     return {'token':value,'file_count':data['file_count'],'local_count':data['local_count'],'missing_on_drive':info is None,'filename':archive['filename']}
                 with drive.storage() as latest:
                     if latest.get('connection',{}).get('email')!=archive['drive_account']:raise ValueError('Подключён другой Google-аккаунт. Повторите проверку.')
+                    if automatic:
+                        from archive_cloud import validate_auto
+                        validate_auto(archive,latest)
                 # Persist a non-downloadable state BEFORE the remote request.
                 set_status(archive_id,'deleting');started=True
                 if info is None:
@@ -114,7 +120,7 @@ def remove_zip(archive_id,admin_id,token=None,ack=False):
             try:
                 with drive.storage() as config:
                     config.setdefault('zip_deletions',{})[archive_id]={'at':int(time.time()),'admin_id':admin_id,'status':final}
-                    drive.log(config,'Архив '+archive_id[:8]+': '+message+' Администратор: '+str(admin_id)+'.')
+                    drive.log(config,'Архив '+archive_id[:8]+': '+message+(' Планировщик.' if automatic else ' Администратор: '+str(admin_id)+'.'))
             except Exception:logging.getLogger(__name__).warning('Archive removal completed; operation log could not be saved')
             return {'status':final,'message':message}
         except Exception as error:

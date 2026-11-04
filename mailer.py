@@ -85,5 +85,19 @@ def send_archive_notice(recipient, filename):
     if any(not os.getenv(key) for key in ['SMTP_HOST','SMTP_USER','SMTP_PASSWORD','SMTP_FROM']):raise ValueError('Настройте SMTP')
     message=EmailMessage();message['From']=str(TypeAdapter(EmailStr).validate_python(os.environ['SMTP_FROM']));message['To']=str(TypeAdapter(EmailStr).validate_python(recipient))
     message['Subject']='Просто 5 — архив материалов готов'
-    message.set_content('Ваши задания и конспекты сохранены в архив: '+filename+'\nМатериалы распределены по датам и темам уроков. Скачать ZIP можно после входа в личный кабинет:\n'+base+'/material-archives.html\n\nОтдельные исходные файлы могут быть удалены с сервера не ранее чем через резервный срок хранения. Проверенный ZIP останется доступен в кабинете.')
+    message.set_content('Ваши задания и конспекты сохранены в архив: '+filename+'\nМатериалы распределены по датам и темам уроков. Скачать ZIP можно после входа в личный кабинет:\n'+base+'/material-archives.html\n\nОтдельные исходные файлы могут быть удалены с сервера не ранее чем через резервный срок хранения. Проверенный ZIP будет доступен в кабинете в течение установленного срока хранения. Перед автоматическим удалением ZIP будет отправлено отдельное предупреждение.')
+    deliver(message)
+
+
+def send_archive_expiry_notice(recipient,filename,delete_after):
+    from datetime import datetime,timezone
+    base=os.environ.get('SITE_URL','').rstrip('/')
+    parsed=urlsplit(base)
+    if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError('Настройте HTTPS SITE_URL для предупреждений об удалении ZIP')
+    if any(not os.getenv(k) for k in ('SMTP_HOST','SMTP_USER','SMTP_PASSWORD','SMTP_FROM')):raise ValueError('Настройте SMTP')
+    date=datetime.fromtimestamp(delete_after,timezone.utc).strftime('%d.%m.%Y %H:%M UTC')
+    message=EmailMessage();message['From']=str(TypeAdapter(EmailStr).validate_python(os.environ['SMTP_FROM']));message['To']=str(TypeAdapter(EmailStr).validate_python(recipient))
+    message['Subject']='Просто 5 — сохраните архив до его удаления'
+    message.set_content('Архив материалов «'+filename+'» запланирован к безвозвратному удалению с Google Диска не ранее '+date+'.\nСкачайте ZIP и сохраните его на своём устройстве. После удаления ссылка перестанет работать, а вложения без исходных копий станут недоступны. Тексты заданий и история занятий останутся.\nСкачать после входа в личный кабинет:\n'+base+'/material-archives.html')
     deliver(message)

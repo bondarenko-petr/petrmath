@@ -229,7 +229,7 @@ def run_cycle(force=False):
             if not config.get('deletion_enabled'):return {'disabled':True}
             now=int(time.time())
             if not force and now-config.get('cleanup_last_started',0)<86400:return {'waiting':True}
-            config['cleanup_last_started']=now;snapshot=json.loads(json.dumps(config))
+            config['cleanup_last_started']=now;config['cleanup_running_at']=now;snapshot=json.loads(json.dumps(config))
         result={'processed':0,'cleaned':0,'errors':0}
         try:
             with database() as (c,p):
@@ -262,7 +262,7 @@ def run_cycle(force=False):
         except Exception:
             result['errors']+=1;logger.warning('Archive cleanup cycle failed; source files are preserved where not processed')
         with drive.storage() as config:
-            config['cleanup_last_finished']=int(time.time());config['cleanup_result']=result
+            config['cleanup_running_at']=0;config['cleanup_last_finished']=int(time.time());config['cleanup_result']=result
             drive.log(config,'Очистка архивов: обработано '+str(result['processed'])+', очищено '+str(result['cleaned'])+', ошибок '+str(result['errors'])+'.')
         return result
 
@@ -277,6 +277,8 @@ def start_worker():
             try:
                 run_notifications()
                 run_cycle()
+                from archive_cloud import run_cycle as run_cloud_cycle
+                run_cloud_cycle()
             except Exception:logger.warning('Archive cleanup worker unavailable; check migration and configuration')
     _thread=threading.Thread(target=work,name='archive-cleanup',daemon=True);_thread.start()
 
