@@ -218,20 +218,22 @@ def notify(archive_id:str,request:Request,tasks:BackgroundTasks,user=Depends(req
 
 class CleanupConfirmation(BaseModel):
     token:str=Field(min_length=32,max_length=100)
+    early:bool=False
+    early_ack:bool=False
 
 @router.post('/{archive_id}/cleanup-preview')
-def cleanup_preview(archive_id:str,request:Request,response:Response,user=Depends(require_admin)):
+def cleanup_preview(archive_id:str,request:Request,response:Response,early:bool=False,user=Depends(require_admin)):
     guard(request);throttle(request)
     response.headers['Cache-Control']='no-store'
     from archive_cleanup import manual_cleanup
-    return manual_cleanup(archive_id,user['id'])
+    return manual_cleanup(archive_id,user['id'],early=early)
 
 @router.post('/{archive_id}/cleanup')
 def cleanup_confirm(archive_id:str,data:CleanupConfirmation,request:Request,response:Response,user=Depends(require_admin)):
     guard(request);throttle(request)
     response.headers['Cache-Control']='no-store'
     from archive_cleanup import manual_cleanup
-    return manual_cleanup(archive_id,user['id'],data.token)
+    return manual_cleanup(archive_id,user['id'],data.token,early=data.early,early_ack=data.early_ack)
 
 @router.get('/{archive_id}/download')
 def download(archive_id:str,request:Request,user=Depends(member)):

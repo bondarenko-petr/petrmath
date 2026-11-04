@@ -270,3 +270,51 @@ class CleanupTests(unittest.TestCase):
         with drive.storage() as config:config['connection']['email']='other@example.com'
         self.assertEqual(self.confirm_manual(preview['token']).status_code,409)
         self.assertTrue(list(self.folder.iterdir()))
+
+    def test_early_cleanup_only_bypasses_time_and_requires_explicit_ack(self):
+        # Genuine recent file, synchronized manifest, and a newly sent notice.
+        import json
+        now=int(time.time())
+        with database() as (c,p):
+            c.execute('UPDATE material_files SET created_at=?',(now,))
+            c.execute('SELECT manifest FROM material_archives');manifest=json.loads(c.fetchone()['manifest']);manifest[0]['files'][0]['created_at']=now
+            c.execute('UPDATE material_archives SET manifest=?',(json.dumps(manifest),))
+        with drive.storage() as config:config['deletion_enabled']=False
+        cleanup.run_notifications(self.archive)
+        response=self.preview_manual()
+        self.assertEqual(response.status_code,409)
+        self.assertEqual(response.json()['detail']['code'],'waiting_period')
+        preview=self.client.post('/api/material-archives/'+self.archive+'/cleanup-preview?early=true',headers=self.headers)
+        self.assertEqual(preview.status_code,200,preview.text)
+        token=preview.json()['token']
+        self.assertEqual(self.confirm_manual(token).status_code,409)
+        url='/api/material-archives/'+self.archive+'/cleanup'
+        self.assertEqual(self.client.post(url,json={'token':token,'early':True},headers=self.headers).status_code,409)
+        self.assertTrue(list(self.folder.iterdir()))
+        result=self.client.post(url,json={'token':token,'early':True,'early_ack':True},headers=self.headers)
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertFalse(list(self.folder.iterdir()))
+        with drive.storage() as config:
+            self.assertFalse(config['deletion_enabled'])
+            self.assertTrue(any('Досрочная ручная очистка' in item['message'] for item in config['events']))
+        self.login_student()
+        self.assertEqual(self.client.get('/api/material-archives/'+self.archive+'/download').content,self.remote.content)
+
+    def test_early_cleanup_does_not_bypass_notice_corruption_or_source_checks(self):
+        url='/api/material-archives/'+self.archive+'/cleanup-preview?early=true'
+        self.assertEqual(self.client.post(url,headers=self.headers).status_code,409)
+        cleanup.run_notifications(self.archive)
+        self.remote.corrupt=True
+        self.assertEqual(self.client.post(url,headers=self.headers).status_code,409)
+        self.remote.corrupt=False
+        preview=self.client.post(url,headers=self.headers).json()
+        next(self.folder.iterdir()).write_bytes(b'changed')
+        result=self.client.post('/api/material-archives/'+self.archive+'/cleanup',json={'token':preview['token'],'early':True,'early_ack':True},headers=self.headers)
+        self.assertEqual(result.status_code,409)
+        self.assertTrue(list(self.folder.iterdir()))
+
+    def test_ordinary_token_cannot_authorize_early_cleanup(self):
+        self.matured();token=self.preview_manual().json()['token']
+        result=self.client.post('/api/material-archives/'+self.archive+'/cleanup',json={'token':token,'early':True,'early_ack':True},headers=self.headers)
+        self.assertEqual(result.status_code,409)
+        self.assertTrue(list(self.folder.iterdir()))

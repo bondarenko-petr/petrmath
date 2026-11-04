@@ -90,7 +90,8 @@ def inspect_drive(archive,config):
         headers=drive.access(client,connection,config)
         remote_download(client,headers,archive['drive_id'],Path(folder)/'verified.zip',archive['size'],archive['sha256'])
 
-def purge(archive,config,now,*,manual=False,preview=False,expected=None):
+def purge(archive,config,now,*,manual=False,preview=False,expected=None,early=False):
+    if early and not (manual or preview):raise ValueError('Досрочная очистка доступна только вручную.')
     days=config.get('retention_days',28);grace=config.get('grace_days',14)
     root=material_storage();sources=[]
     with database() as (c,p):
@@ -104,7 +105,8 @@ def purge(archive,config,now,*,manual=False,preview=False,expected=None):
         if current['sha256']!=archive['sha256'] or current['drive_id']!=archive['drive_id'] or current['manifest']!=archive['manifest']:raise ValueError('Состав архива изменился. Очистка отложена.')
         c.execute(f'SELECT u.email,u.is_active,v.email AS verified FROM users u LEFT JOIN verified_emails v ON v.user_id=u.id WHERE u.id={p}',(archive['student_id'],));user=c.fetchone()
         if not user or not user['is_active'] or not user['email'] or user['email'].lower()!=user['verified'] or user['email'].lower()!=current['notified_email']:raise ValueError('Почта изменилась или не подтверждена. Очистка отложена.')
-        if not current['verified_at'] or not current['notified_at'] or now-max(current['verified_at'],current['notified_at'])<grace*86400:return False
+        if not current['verified_at'] or not current['notified_at']:return False
+        if not early and now-max(current['verified_at'],current['notified_at'])<grace*86400:return False
         # Lock lessons in the same order as ordinary material edits and deletion.
         c.execute(f'SELECT id FROM lessons WHERE student_id={p} ORDER BY id'+(' FOR UPDATE' if p!='?' else ''),(archive['student_id'],));c.fetchall()
         for lesson in json.loads(current['manifest']):
@@ -112,7 +114,7 @@ def purge(archive,config,now,*,manual=False,preview=False,expected=None):
                 c.execute(f'SELECT f.*,l.student_id FROM material_files f JOIN lessons l ON l.id=f.lesson_id WHERE f.id={p}',(original['id'],));file=c.fetchone()
                 if not file or file['deleted_at'] is not None:continue
                 if file['student_id']!=archive['student_id'] or file['lesson_id']!=lesson['id'] or file['storage_key']!=original['storage_key'] or file['size']!=original['size'] or file['category']!=original['category'] or file['created_at']!=original['created_at']:raise ValueError('Исходные сведения изменились. Очистка остановлена.')
-                if file['created_at']>now-days*86400:return False
+                if not early and file['created_at']>now-days*86400:return False
                 if file['archive_id'] not in (None,archive['id']):raise ValueError('Файл связан с другим архивом.')
                 if not re.fullmatch(r'[0-9a-f]{32}\.(pdf|jpg|png)',file['storage_key']):raise ValueError('Некорректное имя исходного файла.')
                 path=root/file['storage_key']
@@ -125,7 +127,7 @@ def purge(archive,config,now,*,manual=False,preview=False,expected=None):
         details={'archive':current['id'],'sha256':current['sha256'],'manifest':current['manifest'],
                  'drive_id':current['drive_id'],'verified_at':current['verified_at'],
                  'notified_at':current['notified_at'],'email':current['notified_email'],
-                 'retention_days':days,'grace_days':grace,
+                 'retention_days':days,'grace_days':grace,'early':early,
                  'sources':[(file['id'],file['storage_key'],file['size'],path.exists()) for file,path in sources]}
         signature=hashlib.sha256(json.dumps(details,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         summary={'file_count':sum(path.exists() for file,path in sources),
@@ -141,8 +143,8 @@ def purge(archive,config,now,*,manual=False,preview=False,expected=None):
     with drive.storage() as latest:
         if not manual and not latest.get('deletion_enabled'):return False
         if latest.get('connection',{}).get('email','')!=archive['drive_account']:return False
-        if now-max(current['verified_at'],current['notified_at'])<latest.get('grace_days',14)*86400:return False
-        if any(file['created_at']>now-latest.get('retention_days',28)*86400 for file,path in sources):return False
+        if not early and now-max(current['verified_at'],current['notified_at'])<latest.get('grace_days',14)*86400:return False
+        if not early and any(file['created_at']>now-latest.get('retention_days',28)*86400 for file,path in sources):return False
         with database() as (c,p):
             if p=='?':c.execute('BEGIN IMMEDIATE')
             c.execute(f'SELECT email,is_active FROM users WHERE id={p}'+(' FOR UPDATE' if p!='?' else ''),(archive['student_id'],));user=c.fetchone()
@@ -159,7 +161,7 @@ def purge(archive,config,now,*,manual=False,preview=False,expected=None):
             c.execute(f'UPDATE material_archives SET cleanup_at={p},purged_count={p},cleanup_error={p} WHERE id={p}',(now,len(sources),'',archive['id']))
     return True
 
-def manual_cleanup(archive_id,admin_id,token=None):
+def manual_cleanup(archive_id,admin_id,token=None,*,early=False,early_ack=False):
     """Explicit, single-archive cleanup. A preview never changes source metadata."""
     with drive.storage():pass  # Ensure the private directory exists.
     folder=Path(os.getenv('GOOGLE_DRIVE_PRIVATE_DIR',str(ROOT/'data'/'google-drive'))).resolve()
@@ -180,6 +182,8 @@ def manual_cleanup(archive_id,admin_id,token=None):
             if token is not None:
                 if not confirmation or confirmation['admin_id']!=admin_id or confirmation['expires_at']<=now or not secrets.compare_digest(confirmation['token'],token):
                     raise HTTPException(409,'Подтверждение отсутствует или устарело. Проверьте объём удаления заново.')
+                if confirmation.get('early',False)!=early or (early and not early_ack):
+                    raise HTTPException(409,'Подтвердите досрочное удаление исходников отдельной галочкой.')
                 del config['manual_cleanup_confirmations'][archive_id]  # One use, even if verification fails.
         try:
             email=notice_target(archive)
@@ -187,25 +191,26 @@ def manual_cleanup(archive_id,admin_id,token=None):
                 raise ValueError('Сначала отправьте уведомление на подтверждённую почту ученика и дождитесь окончания резервного срока.')
             deadline=lifecycle.not_before(archive,snapshot)
             if deadline is None:raise ValueError('Не удалось рассчитать срок очистки.')
-            if now<deadline:
+            if now<deadline and not early:
                 date=datetime.fromtimestamp(deadline,timezone.utc).strftime('%d.%m.%Y %H:%M UTC')
-                raise ValueError('Срок хранения или ожидания ещё не истёк. Очистка доступна не ранее '+date+'.')
+                raise HTTPException(409,{'code':'waiting_period','message':'Срок хранения или ожидания ещё не истёк. Очистка доступна не ранее '+date+'.','cleanup_not_before':deadline})
             inspect_drive(archive,snapshot)
             if token is None:
-                result=purge(archive,snapshot,now,preview=True)
+                result=purge(archive,snapshot,now,preview=True,early=early)
                 if result is False:raise ValueError('Условия очистки изменились. Повторите проверку позже.')
                 preview_token=secrets.token_urlsafe(32)
                 with drive.storage() as config:
                     config.setdefault('manual_cleanup_confirmations',{})[archive_id]={
-                        'token':preview_token,'signature':result['signature'],'admin_id':admin_id,'expires_at':now+300}
+                        'token':preview_token,'signature':result['signature'],'admin_id':admin_id,'expires_at':now+300,'early':early}
                 return {'token':preview_token,'file_count':result['file_count'],'bytes':result['bytes'],
-                        'expires_at':now+300,'cleanup_not_before':deadline}
-            if not purge(archive,snapshot,now,manual=True,expected=confirmation['signature']):
+                        'expires_at':now+300,'cleanup_not_before':deadline,'early':early}
+            if not purge(archive,snapshot,now,manual=True,expected=confirmation['signature'],early=early):
                 raise ValueError('Условия очистки изменились. Повторите проверку объёма удаления.')
             lifecycle.record(archive,stage='cleanup')
             with drive.storage() as config:
-                drive.log(config,'Ручная очистка архива '+archive_id[:8]+' выполнена администратором '+str(admin_id)+'. ZIP на Google Drive сохранён.')
+                drive.log(config,('Досрочная ручная очистка архива ' if early else 'Ручная очистка архива ')+archive_id[:8]+' выполнена администратором '+str(admin_id)+('. Обычный срок: '+datetime.fromtimestamp(deadline,timezone.utc).isoformat() if early else '')+'. ZIP на Google Drive сохранён.')
             return {'status':'completed','message':'Исходные вложения удалены с сервера. ZIP, тексты материалов и история занятий сохранены.'}
+        except HTTPException:raise
         except Exception as error:
             message=safe_error(error)
             if token is not None:save_error(archive_id,message,'cleanup')
@@ -245,7 +250,7 @@ def run_cycle(force=False):
                     stage='cleanup'
                     deadline=lifecycle.not_before(archive,snapshot)
                     if deadline is None:raise ValueError('Не удалось рассчитать срок очистки.')
-                    if now<deadline:continue
+                    if now<deadline and not early:continue
                     inspect_drive(archive,snapshot)
                     if purge(archive,snapshot,now):result['cleaned']+=1
                     lifecycle.record(archive,stage='cleanup')

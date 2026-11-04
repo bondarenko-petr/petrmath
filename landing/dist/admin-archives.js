@@ -1,16 +1,16 @@
 (()=>{
  const q=s=>document.querySelector(s),status=q('#status');let busy=false,offset=0,generation=0,timer=null,ready=false,noticePending=null,cleanupBusy=false;
  const states={building:'Создаётся',uploading:'Загружается',verifying:'Проверяется',verified:'Проверен',failed:'Ошибка'};
- async function request(path,method='GET',data){const response=await fetch('/api/'+path,{method,cache:'no-store',headers:method==='GET'?{}:{'Content-Type':'application/json','X-Requested-With':'KrugPi'},...(data?{body:JSON.stringify(data)}:{})});const result=await response.json();if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'Не удалось выполнить запрос.');return result}
+ async function request(path,method='GET',data){const response=await fetch('/api/'+path,{method,cache:'no-store',headers:method==='GET'?{}:{'Content-Type':'application/json','X-Requested-With':'KrugPi'},...(data?{body:JSON.stringify(data)}:{})});const result=await response.json();if(!response.ok){const error=Error(typeof result.detail==='string'?result.detail:result.detail?.message||'Не удалось выполнить запрос.');error.code=result.detail?.code;throw error}return result}
  function selection(){const owner=q('#archive-student').value;q('#archive-create').disabled=busy||!owner;q('#archive-selection-help').hidden=!!owner;const url=new URL(location.href);if(owner)url.searchParams.set('student_id',owner);else url.searchParams.delete('student_id');history.replaceState(null,'',url)}
  const el=(tag,value)=>{const node=document.createElement(tag);if(value!==undefined)node.textContent=value;return node};
  const date=value=>value?value.split('-').reverse().join('.'):'—';
- const cleanupDialog=q('#cleanup-dialog'),cleanupTitle=q('#cleanup-title'),cleanupMessage=q('#cleanup-message'),cleanupDetails=q('#cleanup-details'),cleanupConfirm=q('#cleanup-confirm'),cleanupClose=q('#cleanup-close');
+ const cleanupDialog=q('#cleanup-dialog'),cleanupTitle=q('#cleanup-title'),cleanupMessage=q('#cleanup-message'),cleanupDetails=q('#cleanup-details'),cleanupConfirm=q('#cleanup-confirm'),cleanupClose=q('#cleanup-close'),cleanupEarly=q('#cleanup-early'),cleanupAck=q('#cleanup-early-ack'),cleanupAckLabel=q('#cleanup-early-label');
  let deleting=false,cleanupOwner=null;
  cleanupClose.onclick=()=>cleanupDialog.close();
  cleanupDialog.addEventListener('cancel',event=>{if(deleting)event.preventDefault()});
  cleanupDialog.addEventListener('close',()=>{const button=Array.from(document.querySelectorAll('.archive-cleanup-button')).find(node=>node.dataset.archiveId===cleanupOwner);(button||q('#archive-refresh')).focus()});
- function cleanupView(title,message){cleanupTitle.textContent=title;cleanupMessage.textContent=message;cleanupConfirm.hidden=true;cleanupClose.disabled=false;cleanupClose.textContent='Закрыть';cleanupDialog.removeAttribute('aria-busy')}
+ function cleanupView(title,message){cleanupTitle.textContent=title;cleanupMessage.textContent=message;cleanupConfirm.hidden=true;cleanupConfirm.disabled=false;cleanupConfirm.textContent='Удалить файлы с сервера';cleanupEarly.hidden=true;cleanupAckLabel.hidden=true;cleanupAck.checked=false;cleanupClose.disabled=false;cleanupClose.textContent='Закрыть';cleanupDialog.removeAttribute('aria-busy')}
  function cleanupButton(row){
   const button=el('button','Удалить исходные файлы');button.type='button';button.className='archive-cleanup-button';button.dataset.archiveId=row.id;
   button.onclick=async()=>{
@@ -20,18 +20,37 @@
    cleanupDialog.setAttribute('aria-busy','true');cleanupDialog.showModal();cleanupClose.focus();
    try{
     const path='material-archives/'+encodeURIComponent(row.id);
-    const preview=await request(path+'/cleanup-preview','POST');
+    let preview,early=false;
+    try{preview=await request(path+'/cleanup-preview','POST')}
+    catch(error){
+     if(error.code!=='waiting_period'||!cleanupDialog.open)throw error;
+     cleanupView('Срок очистки ещё не наступил',error.message+' Можно удалить исходники досрочно после дополнительных проверок и подтверждения.');
+     cleanupEarly.hidden=false;cleanupClose.textContent='Отмена';
+     const proceed=await new Promise(resolve=>{
+      const finish=value=>{cleanupDialog.removeEventListener('close',cancel);cleanupEarly.onclick=null;resolve(value)};
+      const cancel=()=>finish(false);cleanupDialog.addEventListener('close',cancel,{once:true});cleanupEarly.onclick=()=>finish(true);
+     });
+     if(!proceed)return;
+     early=true;cleanupView('Проверка досрочной очистки','Проверяем ZIP на Google Диске и исходники. Пока ничего не удаляется…');cleanupDialog.setAttribute('aria-busy','true');
+     preview=await request(path+'/cleanup-preview?early=true','POST');
+    }
     if(!cleanupDialog.open)return;
     const amount=preview.bytes<1024*1024?(preview.bytes/1024).toLocaleString('ru-RU',{maximumFractionDigits:1})+' КБ':(preview.bytes/1024/1024).toLocaleString('ru-RU',{maximumFractionDigits:1})+' МБ';
     cleanupView('Удалить исходные файлы?','С сервера сайта будут удалены файлы: '+preview.file_count+' · '+amount+'. ZIP на Google Диске, тексты заданий и история занятий сохранятся. Исходные вложения будут доступны через архив.');
+    if(early){
+     const deadline=new Date(preview.cleanup_not_before*1000).toLocaleString('ru-RU');
+     cleanupTitle.textContent='Досрочное удаление исходников';cleanupMessage.textContent='Обычная очистка доступна: '+deadline+'.\n\n'+cleanupMessage.textContent;
+     cleanupAckLabel.hidden=false;cleanupConfirm.disabled=true;cleanupConfirm.textContent='Всё равно удалить';cleanupAck.onchange=()=>{cleanupConfirm.disabled=!cleanupAck.checked};
+    }
     cleanupConfirm.hidden=false;cleanupClose.textContent='Отмена';cleanupClose.focus();
     const confirmed=await new Promise(resolve=>{
      const finish=value=>{cleanupDialog.removeEventListener('close',cancel);cleanupConfirm.onclick=null;resolve(value)};
      const cancel=()=>finish(false);cleanupDialog.addEventListener('close',cancel,{once:true});cleanupConfirm.onclick=()=>finish(true);
     });
     if(!confirmed){status.textContent='Удаление отменено. Файлы сохранены.';return}
+    const earlyAcknowledged=early&&cleanupAck.checked;
     deleting=true;cleanupView('Удаление исходников','Повторно проверяем архив и удаляем только подтверждённые исходные вложения. Дождитесь результата…');cleanupClose.disabled=true;cleanupDialog.setAttribute('aria-busy','true');
-    const result=await request(path+'/cleanup','POST',{token:preview.token});status.textContent=result.message;
+    const result=await request(path+'/cleanup','POST',{token:preview.token,early,early_ack:earlyAcknowledged});status.textContent=result.message;
     cleanupView('Очистка завершена',result.message);cleanupClose.focus();
    }catch(error){
     status.textContent=error.message;

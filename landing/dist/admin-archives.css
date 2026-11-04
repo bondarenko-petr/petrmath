@@ -5,3 +5,5 @@
 .archive-cleanup-button{color:#9b2539;border-color:#e9b9c2}.archive-cleanup-button:hover{background:#fff1f3}
 
 #cleanup-dialog{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box;padding:28px;border:1px solid #dfd0f1;border-radius:18px;background:#fff;color:#321653;box-shadow:0 20px 70px #24103a33}#cleanup-dialog::backdrop{background:#24103a80}#cleanup-dialog h2{margin:0 0 12px;font-size:24px;line-height:1.25}#cleanup-details{overflow-wrap:anywhere}#cleanup-message{line-height:1.6;white-space:pre-line}.cleanup-dialog-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:12px;margin-top:24px}.cleanup-dialog-actions button{min-height:44px;margin:0}.cleanup-dialog-actions [hidden]{display:none!important}@media(max-width:480px){#cleanup-dialog{padding:20px}.cleanup-dialog-actions button{width:100%}}
+
+#cleanup-early-label{display:flex;gap:10px;align-items:flex-start;line-height:1.5;margin-top:20px}#cleanup-early-label[hidden]{display:none}#cleanup-early-ack{width:18px;min-width:18px;height:18px;margin:3px 0 0}#cleanup-early{color:#9b2539;border-color:#e9b9c2}
