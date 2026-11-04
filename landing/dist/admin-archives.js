@@ -5,20 +5,38 @@
  function selection(){const owner=q('#archive-student').value;q('#archive-create').disabled=busy||!owner;q('#archive-selection-help').hidden=!!owner;const url=new URL(location.href);if(owner)url.searchParams.set('student_id',owner);else url.searchParams.delete('student_id');history.replaceState(null,'',url)}
  const el=(tag,value)=>{const node=document.createElement(tag);if(value!==undefined)node.textContent=value;return node};
  const date=value=>value?value.split('-').reverse().join('.'):'—';
+ const cleanupDialog=q('#cleanup-dialog'),cleanupTitle=q('#cleanup-title'),cleanupMessage=q('#cleanup-message'),cleanupDetails=q('#cleanup-details'),cleanupConfirm=q('#cleanup-confirm'),cleanupClose=q('#cleanup-close');
+ let deleting=false,cleanupOwner=null;
+ cleanupClose.onclick=()=>cleanupDialog.close();
+ cleanupDialog.addEventListener('cancel',event=>{if(deleting)event.preventDefault()});
+ cleanupDialog.addEventListener('close',()=>{const button=Array.from(document.querySelectorAll('.archive-cleanup-button')).find(node=>node.dataset.archiveId===cleanupOwner);(button||q('#archive-refresh')).focus()});
+ function cleanupView(title,message){cleanupTitle.textContent=title;cleanupMessage.textContent=message;cleanupConfirm.hidden=true;cleanupClose.disabled=false;cleanupClose.textContent='Закрыть';cleanupDialog.removeAttribute('aria-busy')}
  function cleanupButton(row){
-  const button=el('button','Удалить исходные файлы');button.type='button';button.className='archive-cleanup-button';
+  const button=el('button','Удалить исходные файлы');button.type='button';button.className='archive-cleanup-button';button.dataset.archiveId=row.id;
   button.onclick=async()=>{
-   if(cleanupBusy)return;cleanupBusy=true;button.disabled=true;clearTimeout(timer);
-   status.textContent='Проверяем ZIP на Google Диске и исходные файлы. Пока ничего не удаляется…';
+   if(cleanupBusy)return;cleanupBusy=true;cleanupOwner=row.id;button.disabled=true;clearTimeout(timer);
+   cleanupDetails.textContent=(row.student_name||'Ученик #'+row.student_id)+' · '+row.filename;
+   cleanupView('Проверка перед очисткой','Проверяем ZIP на Google Диске и исходные файлы. Пока ничего не удаляется…');
+   cleanupDialog.setAttribute('aria-busy','true');cleanupDialog.showModal();cleanupClose.focus();
    try{
     const path='material-archives/'+encodeURIComponent(row.id);
     const preview=await request(path+'/cleanup-preview','POST');
+    if(!cleanupDialog.open)return;
     const amount=preview.bytes<1024*1024?(preview.bytes/1024).toLocaleString('ru-RU',{maximumFractionDigits:1})+' КБ':(preview.bytes/1024/1024).toLocaleString('ru-RU',{maximumFractionDigits:1})+' МБ';
-    if(!confirm('Удалить исходные вложения с сервера сайта?\n\nУченик: '+(row.student_name||'Ученик #'+row.student_id)+'\nАрхив: '+row.filename+'\nФайлов: '+preview.file_count+' · Объём: '+amount+'\n\nZIP на Google Диске, тексты заданий и история занятий сохранятся. Исходные вложения будут доступны через архив.')){status.textContent='Удаление отменено. Файлы сохранены.';return}
-    status.textContent='Повторно проверяем архив и удаляем только подтверждённые исходные вложения…';
+    cleanupView('Удалить исходные файлы?','С сервера сайта будут удалены файлы: '+preview.file_count+' · '+amount+'. ZIP на Google Диске, тексты заданий и история занятий сохранятся. Исходные вложения будут доступны через архив.');
+    cleanupConfirm.hidden=false;cleanupClose.textContent='Отмена';cleanupClose.focus();
+    const confirmed=await new Promise(resolve=>{
+     const finish=value=>{cleanupDialog.removeEventListener('close',cancel);cleanupConfirm.onclick=null;resolve(value)};
+     const cancel=()=>finish(false);cleanupDialog.addEventListener('close',cancel,{once:true});cleanupConfirm.onclick=()=>finish(true);
+    });
+    if(!confirmed){status.textContent='Удаление отменено. Файлы сохранены.';return}
+    deleting=true;cleanupView('Удаление исходников','Повторно проверяем архив и удаляем только подтверждённые исходные вложения. Дождитесь результата…');cleanupClose.disabled=true;cleanupDialog.setAttribute('aria-busy','true');
     const result=await request(path+'/cleanup','POST',{token:preview.token});status.textContent=result.message;
-   }catch(error){status.textContent=error.message}
-   finally{cleanupBusy=false;button.disabled=false;await load()}
+    cleanupView('Очистка завершена',result.message);cleanupClose.focus();
+   }catch(error){
+    status.textContent=error.message;
+    if(cleanupDialog.open){cleanupView(deleting?'Не удалось завершить очистку':'Очистка пока недоступна',error.message);cleanupClose.textContent='Понятно';cleanupClose.focus()}
+   }finally{deleting=false;cleanupBusy=false;button.disabled=false;await load()}
   };return button;
  }
  async function load(){if(!ready||cleanupBusy)return;clearTimeout(timer);const token=++generation;try{const params=new URLSearchParams({limit:20,offset,errors_only:q('#errors-only').checked});if(q('#archive-student').value)params.set('student_id',q('#archive-student').value);const result=await request('material-archives?'+params);if(token!==generation)return;const body=q('#archive-rows');body.replaceChildren();let active=false;for(const row of result.items){const tr=el('tr'),name=el('td',row.student_name||'Ученик #'+row.student_id),period=el('td',date(row.period_from)+' — '+date(row.period_to)),size=el('td',row.file_count+' файлов');size.append(el('small',row.lesson_count+' занятий · '+(row.size?(row.size/1024/1024).toLocaleString('ru-RU',{maximumFractionDigits:1})+' МБ':'размер уточняется')));period.append(el('small','Создан: '+new Date(row.created_at*1000).toLocaleDateString('ru-RU')));const state=el('td'),badge=el('span',states[row.status]||row.status);badge.className='archive-status '+row.status;state.append(badge);if(row.error){const error=el('small',row.error);error.className='archive-failure';state.append(error)}state.append(window.renderArchiveLifecycle(row));const action=el('td');if(row.status==='verified'){const link=el('a','Скачать ZIP →');link.href='/api/material-archives/'+encodeURIComponent(row.id)+'/download';action.append(link);if(!row.cleanup_at){const button=el('button','Проверить и отправить уведомление');button.type='button';button.onclick=async()=>{if(!confirm('Проверить архив и отправить письмо ученику? Исходные файлы не удаляются.'))return;button.disabled=true;noticePending=row.id;status.textContent='Проверяем архив и уведомление…';try{await request('material-archives/'+encodeURIComponent(row.id)+'/notify','POST');status.textContent='Проверка запущена без удаления файлов. Обновите список через несколько секунд.';setTimeout(()=>void load(),2000)}catch(error){noticePending=null;status.textContent=error.message}finally{button.disabled=false}};action.append(button);action.append(cleanupButton(row))}}else action.textContent='—';tr.append(name,period,size,state,action);body.append(tr);if(['building','uploading','verifying'].includes(row.status)||row.notification_status==='checking')active=true}if(noticePending){const checked=result.items.find(row=>row.id===noticePending);if(checked&&checked.notification_status!=='checking'&&checked.last_check_at){status.textContent='Проверка завершена. Результат указан в строке архива.';noticePending=null}}q('#archive-empty').hidden=!!result.items.length;q('#count').textContent='Всего: '+result.total;q('#previous').disabled=offset===0;q('#next').disabled=offset+20>=result.total;if(active)timer=setTimeout(()=>{if(!document.hidden)void load()},5000)}catch(error){if(token===generation)status.textContent=error.message}}
