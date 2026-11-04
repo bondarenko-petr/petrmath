@@ -58,7 +58,8 @@ def describe(c,p,row):
         c.execute(f"SELECT starts_at FROM lessons WHERE student_id={p} AND starts_at>={p} AND status!='cancelled' ORDER BY starts_at,id LIMIT 1",(row['student_id'],row['ends_at']))
         nxt=c.fetchone()
         if nxt: result['next_lesson_at']=datetime.fromtimestamp(nxt['starts_at'],timezone.utc).isoformat()
-    c.execute(f'SELECT f.id,f.category,f.filename,f.media_type,f.size,f.created_at,f.archive_id,f.archived_at,a.status AS archive_status FROM material_files f LEFT JOIN material_archives a ON a.id=f.archive_id WHERE f.lesson_id={p} AND f.deleted_at IS NULL ORDER BY f.created_at,f.id',(row['id'],))
+    collation='BINARY' if p=='?' else 'utf8mb4_bin'
+    c.execute(f'SELECT f.id,f.category,f.filename,f.media_type,f.size,f.created_at,f.archive_id,f.archived_at,a.status AS archive_status FROM material_files f LEFT JOIN material_archives a ON a.id COLLATE {collation}=f.archive_id COLLATE {collation} WHERE f.lesson_id={p} AND f.deleted_at IS NULL ORDER BY f.created_at,f.id',(row['id'],))
     result['files']=[dict(f) for f in c.fetchall()]
     return result
 
