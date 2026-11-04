@@ -9,6 +9,10 @@ import tempfile
 import threading
 import time
 import httpx
+import hashlib
+import secrets
+from datetime import datetime,timezone
+from fastapi import HTTPException
 from accounts import database
 from database import ROOT
 import drive_settings as drive
@@ -86,7 +90,7 @@ def inspect_drive(archive,config):
         headers=drive.access(client,connection,config)
         remote_download(client,headers,archive['drive_id'],Path(folder)/'verified.zip',archive['size'],archive['sha256'])
 
-def purge(archive,config,now):
+def purge(archive,config,now,*,manual=False,preview=False,expected=None):
     days=config.get('retention_days',28);grace=config.get('grace_days',14)
     root=material_storage();sources=[]
     with database() as (c,p):
@@ -96,6 +100,7 @@ def purge(archive,config,now):
         c.execute(f'SELECT * FROM material_archives WHERE id={p}',(archive['id'],));current=c.fetchone()
         if not current or current['status']!='verified':raise ValueError('Архив не прошёл проверку.')
         current=dict(current)
+        if current['cleanup_at']:raise ValueError('Исходники этого архива уже очищены.')
         if current['sha256']!=archive['sha256'] or current['drive_id']!=archive['drive_id'] or current['manifest']!=archive['manifest']:raise ValueError('Состав архива изменился. Очистка отложена.')
         c.execute(f'SELECT u.email,u.is_active,v.email AS verified FROM users u LEFT JOIN verified_emails v ON v.user_id=u.id WHERE u.id={p}',(archive['student_id'],));user=c.fetchone()
         if not user or not user['is_active'] or not user['email'] or user['email'].lower()!=user['verified'] or user['email'].lower()!=current['notified_email']:raise ValueError('Почта изменилась или не подтверждена. Очистка отложена.')
@@ -116,13 +121,25 @@ def purge(archive,config,now):
                     if path.stat().st_size!=file['size'] or digest(path)!=original.get('sha256'):raise ValueError('Исходный файл изменился. Очистка остановлена.')
                 elif not file['archived_at']:raise ValueError('Исходный файл отсутствует. Очистка остановлена.')
                 sources.append((dict(file),path))
+        # Bind confirmation to this exact archive, current rules and live source set.
+        details={'archive':current['id'],'sha256':current['sha256'],'manifest':current['manifest'],
+                 'drive_id':current['drive_id'],'verified_at':current['verified_at'],
+                 'notified_at':current['notified_at'],'email':current['notified_email'],
+                 'retention_days':days,'grace_days':grace,
+                 'sources':[(file['id'],file['storage_key'],file['size'],path.exists()) for file,path in sources]}
+        signature=hashlib.sha256(json.dumps(details,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        summary={'file_count':sum(path.exists() for file,path in sources),
+                 'bytes':sum(file['size'] for file,path in sources if path.exists()),'signature':signature}
+        if preview:return summary
+        if manual and (not expected or not secrets.compare_digest(signature,expected)):
+            raise ValueError('Состав файлов или настройки изменились. Проверьте объём удаления заново.')
         # Commit usable archive references BEFORE unlinking. A crash can retain extra
         # local copies, but never leaves a missing original with no download path.
         for file,path in sources:
             c.execute(f'UPDATE material_files SET archive_id={p},archived_at=COALESCE(archived_at,{p}) WHERE id={p}',(archive['id'],now,file['id']))
     # Recheck the current toggle immediately before deleting any bytes.
     with drive.storage() as latest:
-        if not latest.get('deletion_enabled'):return False
+        if not manual and not latest.get('deletion_enabled'):return False
         if latest.get('connection',{}).get('email','')!=archive['drive_account']:return False
         if now-max(current['verified_at'],current['notified_at'])<latest.get('grace_days',14)*86400:return False
         if any(file['created_at']>now-latest.get('retention_days',28)*86400 for file,path in sources):return False
@@ -141,6 +158,58 @@ def purge(archive,config,now):
                     path.unlink()
             c.execute(f'UPDATE material_archives SET cleanup_at={p},purged_count={p},cleanup_error={p} WHERE id={p}',(now,len(sources),'',archive['id']))
     return True
+
+def manual_cleanup(archive_id,admin_id,token=None):
+    """Explicit, single-archive cleanup. A preview never changes source metadata."""
+    with drive.storage():pass  # Ensure the private directory exists.
+    folder=Path(os.getenv('GOOGLE_DRIVE_PRIVATE_DIR',str(ROOT/'data'/'google-drive'))).resolve()
+    with open(folder/'cleanup.lock','a') as lock:
+        os.chmod(folder/'cleanup.lock',0o600)
+        try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:raise HTTPException(409,'Выполняется другая операция с архивами. Повторите позже.')
+        with database() as (c,p):
+            c.execute(f'SELECT * FROM material_archives WHERE id={p}',(archive_id,));row=c.fetchone()
+        if not row:raise HTTPException(404,'Архив не найден')
+        archive=dict(row)
+        if archive['status']!='verified' or archive['cleanup_at']:
+            raise HTTPException(409,'Ручная очистка доступна только для проверенного архива до удаления исходников.')
+        now=int(time.time())
+        with drive.storage() as config:
+            snapshot=json.loads(json.dumps(config))
+            confirmation=config.setdefault('manual_cleanup_confirmations',{}).get(archive_id)
+            if token is not None:
+                if not confirmation or confirmation['admin_id']!=admin_id or confirmation['expires_at']<=now or not secrets.compare_digest(confirmation['token'],token):
+                    raise HTTPException(409,'Подтверждение отсутствует или устарело. Проверьте объём удаления заново.')
+                del config['manual_cleanup_confirmations'][archive_id]  # One use, even if verification fails.
+        try:
+            email=notice_target(archive)
+            if not archive['notified_at'] or archive['notified_email']!=email:
+                raise ValueError('Сначала отправьте уведомление на подтверждённую почту ученика и дождитесь окончания резервного срока.')
+            deadline=lifecycle.not_before(archive,snapshot)
+            if deadline is None:raise ValueError('Не удалось рассчитать срок очистки.')
+            if now<deadline:
+                date=datetime.fromtimestamp(deadline,timezone.utc).strftime('%d.%m.%Y %H:%M UTC')
+                raise ValueError('Срок хранения или ожидания ещё не истёк. Очистка доступна не ранее '+date+'.')
+            inspect_drive(archive,snapshot)
+            if token is None:
+                result=purge(archive,snapshot,now,preview=True)
+                if result is False:raise ValueError('Условия очистки изменились. Повторите проверку позже.')
+                preview_token=secrets.token_urlsafe(32)
+                with drive.storage() as config:
+                    config.setdefault('manual_cleanup_confirmations',{})[archive_id]={
+                        'token':preview_token,'signature':result['signature'],'admin_id':admin_id,'expires_at':now+300}
+                return {'token':preview_token,'file_count':result['file_count'],'bytes':result['bytes'],
+                        'expires_at':now+300,'cleanup_not_before':deadline}
+            if not purge(archive,snapshot,now,manual=True,expected=confirmation['signature']):
+                raise ValueError('Условия очистки изменились. Повторите проверку объёма удаления.')
+            lifecycle.record(archive,stage='cleanup')
+            with drive.storage() as config:
+                drive.log(config,'Ручная очистка архива '+archive_id[:8]+' выполнена администратором '+str(admin_id)+'. ZIP на Google Drive сохранён.')
+            return {'status':'completed','message':'Исходные вложения удалены с сервера. ZIP, тексты материалов и история занятий сохранены.'}
+        except Exception as error:
+            message=safe_error(error)
+            if token is not None:save_error(archive_id,message,'cleanup')
+            raise HTTPException(409,message) from error
 
 def run_cycle(force=False):
     # OS lock covers mail and filesystem operations across workers on one host.

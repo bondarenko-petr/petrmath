@@ -162,3 +162,111 @@ class CleanupTests(unittest.TestCase):
         self.sender.assert_called_once()
         self.assertEqual(self.listing()[0]['cleanup_status'],'disabled')
         self.assertTrue(list(self.folder.iterdir()))
+
+    def preview_manual(self):
+        return self.client.post('/api/material-archives/'+self.archive+'/cleanup-preview',headers=self.headers)
+
+    def confirm_manual(self,token):
+        return self.client.post('/api/material-archives/'+self.archive+'/cleanup',json={'token':token},headers=self.headers)
+
+    def test_manual_cleanup_preview_then_confirm_with_automatic_disabled(self):
+        self.matured()
+        with drive.storage() as config:config['deletion_enabled']=False
+        before=list(self.folder.iterdir());preview=self.preview_manual()
+        self.assertEqual(preview.status_code,200,preview.text)
+        self.assertEqual(preview.json()['file_count'],1)
+        self.assertEqual(preview.json()['bytes'],sum(path.stat().st_size for path in before))
+        with database() as (c,p):
+            c.execute('SELECT archived_at,archive_id FROM material_files');file=c.fetchone()
+            self.assertIsNone(file['archived_at']);self.assertIsNone(file['archive_id'])
+        self.assertEqual(list(self.folder.iterdir()),before)
+        self.upload(category='notes')  # Not part of the confirmed archive: preserve.
+        result=self.confirm_manual(preview.json()['token'])
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertEqual(len(list(self.folder.iterdir())),1)
+        self.assertTrue(self.listing()[0]['cleanup_at'])
+        self.assertEqual(self.listing()[0]['cleanup_status'],'completed')
+        self.sender.assert_not_called()
+        self.assertEqual(self.confirm_manual(preview.json()['token']).status_code,409)
+        with drive.storage() as config:
+            self.assertFalse(config['deletion_enabled'])
+            self.assertTrue(any('Ручная очистка' in item['message'] for item in config['events']))
+        self.login_student()
+        result=self.client.get('/api/material-archives/'+self.archive+'/download')
+        self.assertEqual(result.status_code,200)
+        self.assertEqual(result.content,self.remote.content)
+
+    def test_manual_cleanup_requires_notice_and_respects_grace_and_retention(self):
+        self.assertEqual(self.preview_manual().status_code,409)
+        self.assertTrue(list(self.folder.iterdir()))
+        cleanup.run_notifications(self.archive)
+        self.assertEqual(self.preview_manual().status_code,409)
+        self.matured()
+        with drive.storage() as config:config['retention_days']=60
+        self.assertEqual(self.preview_manual().status_code,409)
+        self.assertTrue(list(self.folder.iterdir()))
+
+    def test_manual_cleanup_rechecks_drive_and_sources_after_confirmation(self):
+        self.matured();preview=self.preview_manual().json()
+        self.remote.corrupt=True
+        self.assertEqual(self.confirm_manual(preview['token']).status_code,409)
+        self.assertTrue(list(self.folder.iterdir()))
+        self.remote.corrupt=False;preview=self.preview_manual().json()
+        next(self.folder.iterdir()).write_bytes(b'changed')
+        self.assertEqual(self.confirm_manual(preview['token']).status_code,409)
+        self.assertTrue(list(self.folder.iterdir()))
+        self.assertIsNone(self.listing()[0]['cleanup_at'])
+
+    def test_manual_confirmation_is_required_expires_and_is_bound_to_rules(self):
+        self.matured()
+        self.assertEqual(self.confirm_manual('x'*43).status_code,409)
+        preview=self.preview_manual().json()
+        with drive.storage() as config:config['manual_cleanup_confirmations'][self.archive]['expires_at']=1
+        self.assertEqual(self.confirm_manual(preview['token']).status_code,409)
+        preview=self.preview_manual().json()
+        with drive.storage() as config:config['retention_days']=20
+        self.assertEqual(self.confirm_manual(preview['token']).status_code,409)
+        self.assertTrue(list(self.folder.iterdir()))
+
+    def test_manual_cleanup_requires_admin_csrf_and_same_admin_confirmation(self):
+        self.matured();preview=self.preview_manual().json()
+        with drive.storage() as config:config['manual_cleanup_confirmations'][self.archive]['admin_id']=-1
+        self.assertEqual(self.confirm_manual(preview['token']).status_code,409)
+        self.assertEqual(self.client.post('/api/material-archives/'+self.archive+'/cleanup-preview').status_code,403)
+        self.assertEqual(self.client.post('/api/material-archives/'+self.archive+'/cleanup',json={'token':preview['token']}).status_code,403)
+        self.login_student()
+        self.assertEqual(self.preview_manual().status_code,403)
+        self.assertEqual(self.confirm_manual(preview['token']).status_code,403)
+        self.assertTrue(list(self.folder.iterdir()))
+
+    def test_manual_cleanup_lock_prevents_parallel_operations(self):
+        import fcntl
+        from pathlib import Path
+        self.matured()
+        with open(Path(os.environ['GOOGLE_DRIVE_PRIVATE_DIR'])/'cleanup.lock','a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            self.assertEqual(self.preview_manual().status_code,409)
+        self.assertTrue(list(self.folder.iterdir()))
+
+    def test_manual_cleanup_unlink_failure_can_be_retried(self):
+        self.matured();preview=self.preview_manual().json()
+        original=cleanup.Path.unlink
+        def fail_source(path,*args,**kwargs):
+            if path.parent==self.folder.resolve():raise OSError('busy')
+            return original(path,*args,**kwargs)
+        with patch.object(cleanup.Path,'unlink',fail_source):
+            self.assertEqual(self.confirm_manual(preview['token']).status_code,409)
+        self.assertTrue(list(self.folder.iterdir()))
+        preview=self.preview_manual().json()
+        self.assertEqual(self.confirm_manual(preview['token']).status_code,200)
+        self.assertFalse(list(self.folder.iterdir()))
+
+    def test_manual_cleanup_email_change_or_drive_switch_blocks_confirm(self):
+        self.matured();preview=self.preview_manual().json()
+        with database() as (c,p):c.execute('UPDATE users SET email=? WHERE id=?',('changed@example.com',self.id))
+        self.assertEqual(self.confirm_manual(preview['token']).status_code,409)
+        with database() as (c,p):c.execute('UPDATE users SET email=? WHERE id=?',(self.data['username'],self.id))
+        preview=self.preview_manual().json()
+        with drive.storage() as config:config['connection']['email']='other@example.com'
+        self.assertEqual(self.confirm_manual(preview['token']).status_code,409)
+        self.assertTrue(list(self.folder.iterdir()))

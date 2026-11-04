@@ -640,9 +640,32 @@ Under **Настройки → Архивирование → Автоматич
 
 The server's lifespan starts one background scheduler per process, checking once a minute and allowing a cleanup cycle once per day. An OS file lock serializes cycles across workers on the same host. The application must be running; missed runs execute after restart. **Запустить проверку сейчас** or `.venv/bin/python archive_cleanup.py` can trigger a cycle immediately, but only while cleanup is enabled. This does **not** automatically create archives: only existing verified archives are processed. Multiple servers require shared scheduling/storage coordination before deployment.
 
-Deletion requires all of the following: verified Drive archive; successful notice to the student's current confirmed email; at least `grace_days` after both verification and notification; source age at least `retention_days`; matching source identifiers, owner, size and SHA-256. Fresh files added to an old lesson are not deleted. Archive contents and source hashes are checked again before cleanup. Changed/unavailable sources, unavailable/corrupt Drive, inactive pupils, email problems and toggle-off all defer deletion. Increased retention/grace periods are checked again immediately before unlinking. Originals in trial archives are still protected by the ordinary retention age.
+Deletion requires all of the following: verified Drive archive; successful notice to the student's current confirmed email; at least `grace_days` after both verification and notification; source age at least `retention_days`; matching source identifiers, owner, size and SHA-256. Fresh files added to an old lesson are not deleted. Archive contents and source hashes are checked again before cleanup. Changed/unavailable sources, unavailable/corrupt Drive, inactive pupils, email problems and (for automatic cleanup) toggle-off all defer deletion. Increased retention/grace periods are checked again immediately before unlinking. Originals in trial archives are still protected by the ordinary retention age.
 
 Archive references are committed to `material_files` before unlinking source bytes. A crash or disk error can leave extra local copies for a retry, but keeps a usable archive route. `deleted_at` retains its distinct meaning of an administrator removing an attachment; archival uses `archive_id`/`archived_at`. Lesson history and live text remain, and attachment links switch to the authorized ZIP download. Results and blocking reasons appear in admin archive rows and the settings log. The ZIP remains in Drive indefinitely; there is no automatic remote deletion. Switching Drive accounts does not migrate archives. After migration and restart, first review the archive table, then enable cleanup and run a check; the initial notice starts the grace period rather than deleting sources immediately.
+
+### Ручная очистка исходников отдельного архива
+
+В списке архивов у проверенного ZIP до очистки доступна кнопка **«Удалить исходные
+файлы»**. Она сначала проверяет ZIP на Google Drive, подтверждённую почту активного
+ученика, ранее отправленное уведомление, сроки хранения/ожидания и исходные файлы.
+После проверки показывает количество файлов и объём, который освободится на сервере.
+Отмена подтверждения ничего не удаляет и не меняет ссылки вложений.
+
+Подтверждение одноразовое, действует пять минут и привязано к администратору,
+конкретному архиву, составу исходников и срокам. Перед удалением ZIP и исходники
+проверяются повторно. Изменение условий требует новой проверки. Ручная очистка
+работает и при выключенной **автоматической** очистке, не включая её и не обходя
+сроки ожидания. ZIP на Google Drive, тексты заданий и история занятий сохраняются.
+Новые вложения, не входящие в этот архив, не удаляются. Результат виден в строке
+архива и журнале операций. При сбое удаления может остаться часть локальных копий;
+после новой проверки операцию можно повторить, ссылки на архив сохраняются.
+
+Доступны только администратору с обычным паролем, с защитой от CSRF:
+`POST /api/material-archives/{id}/cleanup-preview`, затем
+`POST /api/material-archives/{id}/cleanup` с токеном подтверждения.
+SQL-миграция для этой доработки не нужна. Проверяйте удаление сначала на тестовом
+архиве, достигшем обычных сроков; не изменяйте даты рабочих данных ради проверки.
 
 ## Автоматическое обновление сервера
 

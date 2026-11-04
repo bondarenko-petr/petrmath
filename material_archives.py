@@ -216,6 +216,23 @@ def notify(archive_id:str,request:Request,tasks:BackgroundTasks,user=Depends(req
     tasks.add_task(run_notice_request,archive_id)
     return {'status':'started','message':'Проверка и отправка уведомления запущены. Удаление файлов не выполняется.'}
 
+class CleanupConfirmation(BaseModel):
+    token:str=Field(min_length=32,max_length=100)
+
+@router.post('/{archive_id}/cleanup-preview')
+def cleanup_preview(archive_id:str,request:Request,response:Response,user=Depends(require_admin)):
+    guard(request);throttle(request)
+    response.headers['Cache-Control']='no-store'
+    from archive_cleanup import manual_cleanup
+    return manual_cleanup(archive_id,user['id'])
+
+@router.post('/{archive_id}/cleanup')
+def cleanup_confirm(archive_id:str,data:CleanupConfirmation,request:Request,response:Response,user=Depends(require_admin)):
+    guard(request);throttle(request)
+    response.headers['Cache-Control']='no-store'
+    from archive_cleanup import manual_cleanup
+    return manual_cleanup(archive_id,user['id'],data.token)
+
 @router.get('/{archive_id}/download')
 def download(archive_id:str,request:Request,user=Depends(member)):
     throttle(request)
