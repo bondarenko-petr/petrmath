@@ -43,13 +43,13 @@ def digest(path):
     return h.hexdigest()
 
 def select_materials(c,p,student,days,include_recent):
-    c.execute(f'SELECT manifest FROM material_archives WHERE student_id={p} AND status={p}',(student,'verified'))
+    c.execute(f"SELECT manifest FROM material_archives WHERE student_id={p} AND status IN ('verified','deleting','delete_failed')",(student,))
     archived={f['id'] for row in c.fetchall() for lesson in json.loads(row['manifest']) for f in lesson['files']}
     cutoff=int(time.time())-days*86400
     c.execute(f"SELECT l.*,m.homework,m.notes,m.due_mode,m.due_date,m.version AS material_version FROM lessons l LEFT JOIN lesson_materials m ON m.lesson_id=l.id WHERE l.student_id={p} AND l.status='completed' ORDER BY l.starts_at,l.id",(student,))
     lessons=[dict(row) for row in c.fetchall()];result=[];total=0;count=0
     for lesson in lessons:
-        c.execute(f'SELECT id,category,storage_key,filename,size,created_at FROM material_files WHERE lesson_id={p} AND deleted_at IS NULL ORDER BY created_at,id',(lesson['id'],))
+        c.execute(f'SELECT id,category,storage_key,filename,size,created_at FROM material_files WHERE lesson_id={p} AND deleted_at IS NULL AND archived_at IS NULL ORDER BY created_at,id',(lesson['id'],))
         files=[dict(f) for f in c.fetchall() if f['id'] not in archived and (include_recent or f['created_at']<=cutoff)]
         if not files:continue
         total+=sum(f['size'] for f in files);count+=len(files)
@@ -183,11 +183,11 @@ def list_archives(response:Response,student_id:int|None=Query(None,gt=0),limit:i
     with database() as (c,p):
         condition='1=1';args=[]
         if owner is not None:condition+=f' AND a.student_id={p}';args.append(owner)
-        if user['role']=='student':condition+=" AND a.status='verified'"
+        if user['role']=='student':condition+=" AND a.status IN ('verified','deleting','delete_failed','deleted','missing')"
         elif errors_only:
             collate='utf8mb4_bin' if p!='?' else 'BINARY'
             eligible=f"u.is_active=1 AND u.email IS NOT NULL AND LOWER(u.email) COLLATE {collate}=v.email COLLATE {collate}"
-            condition+=f" AND (a.status='failed' OR (a.cleanup_error<>'' AND NOT COALESCE((a.cleanup_error={p} AND {eligible}),0)))"
+            condition+=f" AND (a.status IN ('failed','delete_failed') OR (a.status='verified' AND a.cleanup_error<>'' AND NOT COALESCE((a.cleanup_error={p} AND {eligible}),0)))"
             args.append(lifecycle.EMAIL_ERROR)
         source=' FROM material_archives a LEFT JOIN users u ON u.id=a.student_id LEFT JOIN verified_emails v ON v.user_id=u.id'
         c.execute('SELECT COUNT(*) AS n'+source+' WHERE '+condition,tuple(args));total=c.fetchone()['n']
@@ -235,12 +235,30 @@ def cleanup_confirm(archive_id:str,data:CleanupConfirmation,request:Request,resp
     from archive_cleanup import manual_cleanup
     return manual_cleanup(archive_id,user['id'],data.token,early=data.early,early_ack=data.early_ack)
 
+class ZipDeleteConfirmation(BaseModel):
+    token:str=Field(min_length=32,max_length=100)
+    acknowledge_loss:bool=False
+
+@router.post('/{archive_id}/delete-preview')
+def zip_delete_preview(archive_id:str,request:Request,response:Response,user=Depends(require_admin)):
+    guard(request);throttle(request);response.headers['Cache-Control']='no-store'
+    from archive_deletion import remove_zip
+    return remove_zip(archive_id,user['id'])
+
+@router.post('/{archive_id}/delete')
+def zip_delete_confirm(archive_id:str,data:ZipDeleteConfirmation,request:Request,response:Response,user=Depends(require_admin)):
+    guard(request);throttle(request);response.headers['Cache-Control']='no-store'
+    from archive_deletion import remove_zip
+    return remove_zip(archive_id,user['id'],data.token,data.acknowledge_loss)
+
 @router.get('/{archive_id}/download')
 def download(archive_id:str,request:Request,user=Depends(member)):
     throttle(request)
     with database() as (c,p):
         c.execute(f'SELECT * FROM material_archives WHERE id={p}',(archive_id,));row=c.fetchone()
     if not row or (user['role']!='admin' and row['student_id']!=user['id']):raise HTTPException(404,'Архив не найден')
+    if row['status'] in ('deleted','missing'):raise HTTPException(410,'Архив удалён или недоступен. Файлы больше нельзя скачать из этого ZIP.')
+    if row['status'] in ('deleting','delete_failed'):raise HTTPException(409,'Удаление архива выполняется или требует проверки администратором.')
     if row['status']!='verified':raise HTTPException(409,'Архив ещё не прошёл проверку')
     config=snapshot_drive()
     if config['connection'].get('email','')!=row['drive_account']:raise HTTPException(409,'Архив находится в другом Google-аккаунте. Обратитесь к администратору.')

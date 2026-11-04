@@ -43,6 +43,8 @@ def record(archive,error='',stage='notification',user=None):
             c.execute(f'UPDATE material_archives SET cleanup_error={p} WHERE id={p}',(current_error[:500],archive['id']))
 
 def presentation(row,config):
+    if row['status'] in ('deleting','delete_failed','deleted','missing'):
+        return {'notification_status':'not_applicable','cleanup_status':'not_applicable','zip_deleted_at':row.get('updated_at') if row['status']=='deleted' else None}
     check=config.get('archive_checks',{}).get(row['id'],{})
     user={'email':row.get('current_email'),'verified':row.get('confirmed_email'),'is_active':row.get('student_active')}
     ready=email_ready(user)

@@ -58,7 +58,7 @@ def describe(c,p,row):
         c.execute(f"SELECT starts_at FROM lessons WHERE student_id={p} AND starts_at>={p} AND status!='cancelled' ORDER BY starts_at,id LIMIT 1",(row['student_id'],row['ends_at']))
         nxt=c.fetchone()
         if nxt: result['next_lesson_at']=datetime.fromtimestamp(nxt['starts_at'],timezone.utc).isoformat()
-    c.execute(f'SELECT id,category,filename,media_type,size,created_at,archive_id,archived_at FROM material_files WHERE lesson_id={p} AND deleted_at IS NULL ORDER BY created_at,id',(row['id'],))
+    c.execute(f'SELECT f.id,f.category,f.filename,f.media_type,f.size,f.created_at,f.archive_id,f.archived_at,a.status AS archive_status FROM material_files f LEFT JOIN material_archives a ON a.id=f.archive_id WHERE f.lesson_id={p} AND f.deleted_at IS NULL ORDER BY f.created_at,f.id',(row['id'],))
     result['files']=[dict(f) for f in c.fetchall()]
     return result
 
@@ -212,6 +212,10 @@ def download_file(file_id:str,user=Depends(member)):
             raise HTTPException(404,'Вложение не найдено')
         row=dict(row)
     if row.get('archived_at') and row.get('archive_id'):
+        with database() as (c,p):
+            c.execute(f'SELECT status FROM material_archives WHERE id={p}',(row['archive_id'],));archive=c.fetchone()
+        if not archive or archive['status'] in ('deleted','missing'):raise HTTPException(410,'Архив удалён или недоступен. Это вложение больше нельзя скачать.')
+        if archive['status']!='verified':raise HTTPException(409,'Архив временно недоступен. Обратитесь к преподавателю.')
         return RedirectResponse('/api/material-archives/'+row['archive_id']+'/download',status_code=303,headers={'Cache-Control':'no-store'})
     if not re.fullmatch(r'[0-9a-f]{32}\.(pdf|jpg|png)',row['storage_key']): raise HTTPException(404,'Вложение не найдено')
     path=storage()/row['storage_key']

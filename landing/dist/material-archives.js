@@ -1,6 +1,6 @@
 (()=>{
  const q=s=>document.querySelector(s),status=q('#archive-status'),standalone=!!q('[data-archive-page]');let role=null,busy=false,generation=0,offset=0,ownerKey=null,timer=null;
- const states={building:'Создаётся',uploading:'Загружается в Google Drive',verifying:'Проверяется',verified:'Проверен',failed:'Ошибка'};
+ const states={building:'Создаётся',uploading:'Загружается в Google Drive',verifying:'Проверяется',verified:'Проверен',failed:'Ошибка',deleting:'Удаляется',delete_failed:'Удаление не завершено',deleted:'Архив удалён',missing:'Архив недоступен'};
  async function api(path='',method='GET',data){const response=await fetch('/api/material-archives'+path,{method,cache:'no-store',headers:method==='GET'?{}:{'Content-Type':'application/json','X-Requested-With':'KrugPi'},...(data?{body:JSON.stringify(data)}:{})});const result=await response.json();if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'Не удалось загрузить архивы.');return result;}
  const el=(tag,value)=>{const node=document.createElement(tag);if(value!==undefined)node.textContent=value;return node};
  function student(){return role==='admin'?Number(q('#student-select').value)||null:null}
