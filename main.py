@@ -75,5 +75,9 @@ async def mysql_failure(request, error):
     return JSONResponse(status_code=503, content={"detail": "База временно недоступна"})
 
 
+from lesson_board import mount_board
+mount_board(app)
+
+
 # Database files stay outside the public static directory.
 app.mount("/", StaticFiles(directory=str(ROOT / "landing" / "dist"), html=True), name="landing")

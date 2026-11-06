@@ -145,6 +145,12 @@ def student_defaults(cursor, p, student_id):
     return row
 
 
+def board_projection():
+    if os.environ.get('LESSON_BOARD_ENABLED', '').lower() != 'true':
+        return ''
+    return ', EXISTS (SELECT 1 FROM lesson_boards b WHERE b.lesson_id=l.id) AS board_created'
+
+
 @router.get('/settings')
 def settings(user=Depends(member)):
     default_zone = os.environ.get('LESSON_TIMEZONE', 'Europe/Moscow')
@@ -176,7 +182,7 @@ def list_lessons(response: Response, from_ts: int = Query(0, ge=0), to_ts: int |
             clause += f' AND l.student_id={p}'; args.append(owner)
         c.execute(f'SELECT COUNT(*) AS total FROM lessons l WHERE {clause}', tuple(args))
         total = c.fetchone()['total']
-        c.execute(f'SELECT l.*,u.name AS student_name,s.timezone AS student_timezone FROM lessons l JOIN users u ON u.id=l.student_id LEFT JOIN student_profiles s ON s.user_id=l.student_id WHERE {clause} ORDER BY l.starts_at,l.id LIMIT {p} OFFSET {p}', (*args, limit, offset))
+        c.execute(f'SELECT l.*,u.name AS student_name,s.timezone AS student_timezone{board_projection()} FROM lessons l JOIN users u ON u.id=l.student_id LEFT JOIN student_profiles s ON s.user_id=l.student_id WHERE {clause} ORDER BY l.starts_at,l.id LIMIT {p} OFFSET {p}', (*args, limit, offset))
         items = [serialize(r) for r in c.fetchall()]
     response.headers['Cache-Control'] = 'no-store'
     return {'items': items, 'total': total, 'limit': limit, 'offset': offset}
@@ -191,7 +197,7 @@ def summary(user=Depends(member)):
     with database() as (c, p):
         owner = '' if user['role'] == 'admin' else f' AND l.student_id={p}'
         args = () if user['role'] == 'admin' else (user['id'],)
-        base = 'SELECT l.*,u.name AS student_name,s.timezone AS student_timezone FROM lessons l JOIN users u ON u.id=l.student_id LEFT JOIN student_profiles s ON s.user_id=l.student_id WHERE '
+        base = f'SELECT l.*,u.name AS student_name,s.timezone AS student_timezone{board_projection()} FROM lessons l JOIN users u ON u.id=l.student_id LEFT JOIN student_profiles s ON s.user_id=l.student_id WHERE '
         c.execute(base + f"l.ends_at>{p} AND l.status='scheduled'" + owner + ' ORDER BY l.starts_at LIMIT 5', (now, *args))
         upcoming = [serialize(r) for r in c.fetchall()]
         c.execute(base + f'l.starts_at>={p} AND l.starts_at<{p}' + owner + ' ORDER BY l.starts_at', (int(week.timestamp()), int((week + timedelta(days=7)).timestamp()), *args))

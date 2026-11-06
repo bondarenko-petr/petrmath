@@ -55,6 +55,7 @@ def database():
         connection.execute('CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL)')
         connection.execute('CREATE TABLE IF NOT EXISTS lesson_series (id INTEGER PRIMARY KEY, timezone TEXT NOT NULL, created_at INTEGER NOT NULL)')
         connection.execute("CREATE TABLE IF NOT EXISTS lessons (id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL REFERENCES users(id), series_id INTEGER REFERENCES lesson_series(id), starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL, duration_minutes INTEGER NOT NULL, price_kopecks INTEGER NOT NULL, topic TEXT NOT NULL DEFAULT '', meeting_url TEXT NOT NULL DEFAULT '', timezone TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'scheduled', created_at INTEGER NOT NULL)")
+        connection.execute('CREATE TABLE IF NOT EXISTS lesson_boards (lesson_id INTEGER PRIMARY KEY REFERENCES lessons(id) ON DELETE CASCADE, room_id TEXT NOT NULL UNIQUE)')
         connection.execute('CREATE INDEX IF NOT EXISTS lessons_start ON lessons(starts_at)')
         connection.execute('CREATE INDEX IF NOT EXISTS lessons_student_start ON lessons(student_id,starts_at)')
         from payment_schema import ensure_payments
