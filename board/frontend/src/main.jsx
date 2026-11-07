@@ -6,7 +6,7 @@ import {Excalidraw,MainMenu,CaptureUpdateAction,reconcileElements,newElementWith
 import '@excalidraw/excalidraw/index.css';
 import './style.css';
 import {DEFAULT_GRID_RANGE, GridControls, gridDimensions, renderGridFile} from './coordinate-grid.jsx';
-const BUILD='pilot-eraser-protection-1';
+const BUILD='lesson-retention-1';
 const DIAGNOSTICS_KEY = 'prosto5-board-connection-events';
 const DIAGNOSTICS_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 function recentDiagnostics(events) {
@@ -298,6 +298,12 @@ function App(){
      lastFrameAgoMs:elapsed(lastFrameAt),lastPongAgoMs:elapsed(lastPongAt),
     });
     m.ready=false;m.sending=false;setConnected(false);
+    if(event.reason==='board_expired_pdf_saved'){
+     stopped=true;m.canEdit=false;
+     setAccess(previous=>({...previous,canEdit:false,canAttachPdf:false}));
+     setStatus('Доска удалена. PDF доступен в материалах занятия.'+(m.dirty||m.pending.size?' Скачайте копию несохранённых изменений.':''));
+     return;
+    }
     setStatus(`Связь прервана (код ${event.code}). Переподключаемся…${m.dirty||m.pending.size?' Есть несохранённые изменения — скачайте копию.':''}`);
     retry=setTimeout(connect,2500);
    };
@@ -380,6 +386,13 @@ function App(){
   if (!api) return;
   setExporting(true);
   try {
+   if (attach && access.lessonId) {
+    const response = await fetch(`/api/lessons/${access.lessonId}/board-pdf`, {method:'POST',headers:{'X-Requested-With':'KrugPi'}});
+    const result = await response.json();
+    if (!response.ok) throw Error(result.detail || 'Не удалось прикрепить PDF');
+    setStatus('PDF прикреплён к занятию');
+    return;
+   }
    const {sheets: orderedSheets} = await request(`/api/rooms/${roomId}/sheets`);
    const {jsPDF} = await import('jspdf');
    let doc;

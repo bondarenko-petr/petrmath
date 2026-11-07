@@ -31,6 +31,7 @@ function patchEraser(code, production) {
 }
 
 export default defineConfig({
+ build: {rollupOptions: {input: {main: 'index.html', export: 'export.html'}}},
  optimizeDeps: {exclude: ['@excalidraw/excalidraw']},
  plugins: [{
   name: 'prosto5-eraser-protection',

@@ -20,8 +20,20 @@ from contextlib import asynccontextmanager
 async def lifespan(app):
     from archive_cleanup import start_worker, stop_worker
     start_worker()
+    import asyncio
+    import os
+    from contextlib import suppress
+    task = None
+    if os.environ.get('LESSON_BOARD_CLEANUP_ENABLED', '').lower() == 'true' and hasattr(app.state, 'lesson_board_store'):
+        from board_lifecycle import worker
+        task = asyncio.create_task(worker(app.state.lesson_board_store))
     try:yield
-    finally:stop_worker()
+    finally:
+        if task:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        stop_worker()
 
 app = FastAPI(lifespan=lifespan,title="Просто 5 — математика, ОГЭ и ЕГЭ")
 ROOT = Path(__file__).resolve().parent

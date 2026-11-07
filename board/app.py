@@ -28,7 +28,7 @@ MAX_FRAME=1024*1024
 MESSAGES_PER_SECOND = 40
 MESSAGE_BURST = 120
 LOG=logging.getLogger('uvicorn.error')
-BUILD='pilot-eraser-protection-1'
+BUILD='lesson-retention-1'
 
 
 def encode(value):return json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False)
@@ -110,7 +110,7 @@ class Room:
         await asyncio.gather(*(send(peer) for peer in peers))
 
 class Store:
-    def __init__(self,path):self.path=path;path.mkdir(parents=True,exist_ok=True,mode=0o700);self.rooms={};self.creation_lock=asyncio.Lock()
+    def __init__(self,path):self.path=path;path.mkdir(parents=True,exist_ok=True,mode=0o700);self.rooms={};self.creation_lock=asyncio.Lock();self.frozen=set()
     def room(self,room_id):
         if not ID.fullmatch(room_id):raise HTTPException(404,'Доска не найдена')
         if room_id not in self.rooms:
@@ -136,12 +136,22 @@ def create_app(data_dir=None,origin=None,static_dir=None,trusted_proxy='127.0.0.
                 try:await socket.close(code=1001)
                 except Exception:pass
     app=FastAPI(docs_url=None,redoc_url=None,openapi_url=None,lifespan=lifespan)
+    app.state.store = store
+    def writable(room):
+        root = room.scene.get('lesson', room.path.name)
+        if root in store.frozen:
+            raise HTTPException(409, 'Сохраняем PDF доски. Повторите действие после сохранения')
+        if lesson_access is not None:
+            from board_lifecycle import read_state
+            if read_state(root).get('deleted_at'):
+                raise HTTPException(410, 'Доска удалена. PDF доступен в материалах занятия')
     async def auth(connection, room_id=None, *, write=False):
         if lesson_access is not None:
             root_id = None
             if room_id is not None:
                 room = store.room(room_id)
                 root_id = room.scene.get('lesson', room_id)
+                if write: writable(room)
             return await asyncio.to_thread(lesson_access, connection, root_id, write)
         user=connection.headers.get('x-board-user','')
         if not connection.client or connection.client.host!=trusted_proxy or not re.fullmatch(r'[a-zA-Z0-9_.@-]{1,80}',user):raise HTTPException(401,'Откройте доску по защищённому адресу и введите тестовый логин и пароль.')
@@ -238,6 +248,7 @@ def create_app(data_dir=None,origin=None,static_dir=None,trusted_proxy='127.0.0.
             raise HTTPException(403, 'Недопустимый запрос')
         limit(user, 'sheet', 10, 60)
         async with store.creation_lock:
+            writable(store.room(room_id))
             root_id, sheets = lesson_sheets(room_id)
             if len(sheets) >= MAX_SHEETS:
                 raise HTTPException(409, 'Достигнут предел в 30 листов на урок.')
@@ -283,6 +294,7 @@ def create_app(data_dir=None,origin=None,static_dir=None,trusted_proxy='127.0.0.
         limit(user, 'clear-sheet', 10, 60)
         room = store.room(room_id)
         async with room.lock:
+            writable(room)
             if generation != room.scene.get('generation', 0):
                 raise HTTPException(409, 'Лист уже обновился. Проверьте содержимое перед очисткой.')
             scene = {
@@ -313,6 +325,7 @@ def create_app(data_dir=None,origin=None,static_dir=None,trusted_proxy='127.0.0.
         except (ValueError,TypeError) as error:raise HTTPException(422,str(error))
         room = store.room(room_id)
         async with room.lock:
+            writable(room)
             if generation != room.scene.get('generation', 0):
                 raise HTTPException(409, 'Лист был очищен. Загрузите файл заново.')
             target=room.path/'files'/(file['id']+'.json')
@@ -380,6 +393,11 @@ def create_app(data_dir=None,origin=None,static_dir=None,trusted_proxy='127.0.0.
                     background=message.get('background')
                     if background is not None and (not isinstance(background,str) or not re.fullmatch(r'#[0-9a-fA-F]{6}',background)):raise ValueError('Некорректный фон')
                     async with room.lock:
+                        try:
+                            writable(room)
+                        except HTTPException as error:
+                            await socket.send_text(encode({'type':'error','message':error.detail}))
+                            continue
                         generation = message.get('generation', 0)
                         if type(generation) is not int or generation != room.scene.get('generation', 0):
                             await socket.send_text(encode({
@@ -416,6 +434,9 @@ def create_app(data_dir=None,origin=None,static_dir=None,trusted_proxy='127.0.0.
             room.peers.pop(peer,None)
             await room.broadcast({'type':'leave','id':peer,'count':len(room.peers)})
             if not room.peers and not room.lock.locked():store.rooms.pop(room_id,None)
+    @app.get('/export.html')
+    async def export_page():
+        return FileResponse(static/'export.html', headers={'Cache-Control':'no-store'})
     @app.get('/')
     @app.get('/room/{room_id}')
     async def index(request:Request,room_id:str|None=None):

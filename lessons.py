@@ -296,6 +296,14 @@ def status(lesson_id: int, data: StatusInput, request: Request, user=Depends(req
             check_conflicts(c, p, [r | {'status':'scheduled'} for r in rows], [r['id'] for r in rows])
         for r in rows:
             c.execute(f'UPDATE lessons SET status={p} WHERE id={p}', (data.status, r['id']))
+    if data.status == 'completed':
+        from board_lifecycle import mark_completed
+        for r in rows:
+            try:
+                mark_completed(r['id'])
+            except Exception:
+                import logging
+                logging.getLogger('uvicorn.error').exception('lesson_board_completion_time_failed lesson=%s', r['id'])
     return {'updated': len(rows)}
 
 

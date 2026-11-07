@@ -192,7 +192,7 @@ async function deleteStudentDialog(row){
  }catch(e){feedback.textContent=e.message}
 }
 
-function focusCalendarOnOpen(){if(!calendarFocusPending||document.querySelector('#overview').hidden)return;const host=document.querySelector('[data-schedule-root]');if(host?.dataset.calendarReady!=='true')return;requestAnimationFrame(()=>{if(!calendarFocusPending||document.querySelector('#overview').hidden)return;const target=document.querySelector('#weekly-view');if(target.hidden)return;window.scrollTo({top:Math.max(0,target.getBoundingClientRect().top+window.scrollY-24),behavior:'auto'});calendarFocusPending=false;});}
+function focusCalendarOnOpen(){if(!calendarFocusPending||document.querySelector('#overview').hidden)return;const host=document.querySelector('[data-schedule-root]');if(host?.dataset.calendarReady!=='true')return;requestAnimationFrame(()=>{if(!calendarFocusPending||document.querySelector('#overview').hidden)return;const target=document.querySelector('#next-lesson');if(target.hidden)return;window.scrollTo({top:Math.max(0,target.getBoundingClientRect().top+window.scrollY-24),behavior:'auto'});calendarFocusPending=false;});}
 window.addEventListener('schedule-ready',focusCalendarOnOpen);
 
 async function showStudentInformation(id){
