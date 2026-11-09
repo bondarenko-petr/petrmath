@@ -28,7 +28,7 @@ MAX_FRAME=1024*1024
 MESSAGES_PER_SECOND = 40
 MESSAGE_BURST = 120
 LOG=logging.getLogger('uvicorn.error')
-BUILD='lesson-retention-1'
+BUILD='lesson-pdf-pages-1'
 
 
 def encode(value):return json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False)

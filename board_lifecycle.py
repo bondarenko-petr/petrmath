@@ -16,6 +16,7 @@ from accounts import database
 from board.app import ID, KEY, MAX_SHEETS, atomic, encode
 
 LOG = logging.getLogger('uvicorn.error')
+PDF_LAYOUT_VERSION = 'width-pages-1'
 RETENTION = 24 * 3600
 EXPORT_LIMIT = 32 * 1024 * 1024
 EXPORT_LOCK = asyncio.Lock()
@@ -118,7 +119,7 @@ def snapshots(store, ids):
         if total > EXPORT_LIMIT:
             raise ValueError('Доска слишком велика для автоматического PDF. Доска сохранена')
         sheets.append({'elements': visible, 'background': scene['background'], 'files': files})
-    fingerprint = hashlib.sha256(encode(sheets).encode()).hexdigest()
+    fingerprint = hashlib.sha256((PDF_LAYOUT_VERSION + encode(sheets)).encode()).hexdigest()
     return sheets, fingerprint
 
 
@@ -160,6 +161,8 @@ async def render_pdf(sheets):
             await page.route('**/*', route)
             await page.goto(origin + '/board/export.html', wait_until='networkidle', timeout=60000)
             await page.wait_for_function('typeof window.renderLessonPdf === "function"', timeout=30000)
+            if await page.evaluate('window.lessonPdfLayoutVersion') != PDF_LAYOUT_VERSION:
+                raise RuntimeError('Обновите сборку доски: версия экспорта PDF не совпадает с сервером')
             encoded = await asyncio.wait_for(page.evaluate('(sheets) => window.renderLessonPdf(sheets)', sheets), 180)
             raw = base64.b64decode(encoded, validate=True)
             if not raw.startswith(b'%PDF-'):

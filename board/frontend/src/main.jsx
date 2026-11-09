@@ -1,12 +1,13 @@
 import './bootstrap.js';
+import {createLessonPdf} from './lesson-pdf.js';
 import React,{useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {createRoot} from 'react-dom/client';
-import {Excalidraw,MainMenu,CaptureUpdateAction,reconcileElements,newElementWith,convertToExcalidrawElements,exportToCanvas,serializeAsJSON} from '@excalidraw/excalidraw';
+import {Excalidraw,MainMenu,CaptureUpdateAction,reconcileElements,newElementWith,convertToExcalidrawElements,serializeAsJSON} from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import './style.css';
 import {DEFAULT_GRID_RANGE, GridControls, gridDimensions, renderGridFile} from './coordinate-grid.jsx';
-const BUILD='lesson-retention-1';
+const BUILD='lesson-pdf-pages-1';
 const DIAGNOSTICS_KEY = 'prosto5-board-connection-events';
 const DIAGNOSTICS_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 function recentDiagnostics(events) {
@@ -394,9 +395,8 @@ function App(){
     return;
    }
    const {sheets: orderedSheets} = await request(`/api/rooms/${roomId}/sheets`);
-   const {jsPDF} = await import('jspdf');
-   let doc;
-   for (const [index, id] of orderedSheets.entries()) {
+   const snapshots = [];
+   for (const id of orderedSheets) {
     let elements, background, files;
     if (id === roomId) {
      elements = api.getSceneElements().filter(element => !element.isDeleted);
@@ -409,24 +409,9 @@ function App(){
      files = Object.fromEntries(await Promise.all(snapshot.fileIds.map(async fileId =>
       [fileId, await request(`/api/rooms/${id}/files/${encodeURIComponent(fileId)}`)])));
     }
-    const canvas = elements.length ? await exportToCanvas({
-     elements, files,
-     appState: {viewBackgroundColor: background, exportBackground: true, exportWithDarkMode: false},
-     maxWidthOrHeight: 3000, exportPadding: 24,
-    }) : null;
-    const orientation = canvas && canvas.width > canvas.height ? 'landscape' : 'portrait';
-    if (!doc) doc = new jsPDF({orientation, unit: 'mm', format: 'a4'});
-    else doc.addPage('a4', orientation);
-    doc.setFontSize(9);
-    doc.text(String(index + 1) + ' / ' + orderedSheets.length, 10, 8);
-    if (canvas) {
-     const scale = Math.min((doc.internal.pageSize.getWidth() - 20) / canvas.width,
-                            (doc.internal.pageSize.getHeight() - 22) / canvas.height);
-     const width = canvas.width * scale;
-     doc.addImage(canvas.toDataURL('image/png'), 'PNG', (doc.internal.pageSize.getWidth() - width) / 2,
-                  12, width, canvas.height * scale);
-    }
+    snapshots.push({elements,background,files});
    }
+   const doc = await createLessonPdf(snapshots);
    if (attach) {
     const form = new FormData();
     form.append('files', doc.output('blob'), 'Записи с доски.pdf');
