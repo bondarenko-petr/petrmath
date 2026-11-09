@@ -146,7 +146,9 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(row['cleanup_not_before'],now+28*86400)
         self.assertEqual(row['cleanup_status'],'waiting_period')
         with patch('archive_cleanup.purge',side_effect=AssertionError('not before displayed date')):
-            self.assertEqual(cleanup.run_cycle(force=True)['cleaned'],0)
+            result=cleanup.run_cycle(force=True)
+            self.assertEqual(result['cleaned'],0)
+            self.assertEqual(result['errors'],0,result)
 
     def test_manual_notice_requires_admin_and_csrf(self):
         url='/api/material-archives/'+self.archive+'/notify'
@@ -318,3 +320,20 @@ class CleanupTests(unittest.TestCase):
         result=self.client.post('/api/material-archives/'+self.archive+'/cleanup',json={'token':token,'early':True,'early_ack':True},headers=self.headers)
         self.assertEqual(result.status_code,409)
         self.assertTrue(list(self.folder.iterdir()))
+
+    def test_waiting_for_grace_is_not_a_cleanup_error(self):
+        first=cleanup.run_cycle(force=True)
+        self.assertEqual(first['errors'],0,first)
+        before={path.name:path.read_bytes() for path in self.folder.iterdir()}
+        with patch('archive_cleanup.purge') as purge, patch('archive_cleanup.inspect_drive') as inspect:
+            result=cleanup.run_cycle(force=True)
+        self.assertEqual(result['processed'],1)
+        self.assertEqual(result['cleaned'],0)
+        self.assertEqual(result['errors'],0,result)
+        purge.assert_not_called()
+        inspect.assert_not_called()
+        self.assertEqual({path.name:path.read_bytes() for path in self.folder.iterdir()},before)
+        row=self.listing()[0]
+        self.assertEqual(row['cleanup_status'],'waiting_period')
+        self.assertEqual(row['cleanup_issue'],'')
+        self.assertIsNone(row['cleanup_at'])

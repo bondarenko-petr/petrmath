@@ -250,7 +250,7 @@ def run_cycle(force=False):
                     stage='cleanup'
                     deadline=lifecycle.not_before(archive,snapshot)
                     if deadline is None:raise ValueError('Не удалось рассчитать срок очистки.')
-                    if now<deadline and not early:continue
+                    if now<deadline:continue
                     inspect_drive(archive,snapshot)
                     if purge(archive,snapshot,now):result['cleaned']+=1
                     lifecycle.record(archive,stage='cleanup')
