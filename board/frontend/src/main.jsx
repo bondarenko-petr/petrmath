@@ -6,8 +6,10 @@ import {createRoot} from 'react-dom/client';
 import {Excalidraw,MainMenu,CaptureUpdateAction,reconcileElements,newElementWith,convertToExcalidrawElements,serializeAsJSON} from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import './style.css';
+import {ActionMenu} from './action-menu.jsx';
+import {GEOMETRY,geometryBounds} from './geometry.mjs';
 import {DEFAULT_GRID_RANGE, GridControls, gridDimensions, renderGridFile} from './coordinate-grid.jsx';
-const BUILD='lesson-pdf-pages-1';
+const BUILD='lesson-menu-geometry-1';
 const DIAGNOSTICS_KEY = 'prosto5-board-connection-events';
 const DIAGNOSTICS_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 function recentDiagnostics(events) {
@@ -59,6 +61,12 @@ const STROKED_TYPES = new Set(['rectangle', 'diamond', 'ellipse', 'line', 'arrow
 function isSelectedStroke(element, appState) {
  return !element.isDeleted && appState.selectedElementIds[element.id] && STROKED_TYPES.has(element.type);
 }
+function GeometryIcon({objects}) {
+ const [left,top,right,bottom]=geometryBounds(objects),width=right-left,height=bottom-top;
+ return <svg viewBox={`${left-10} ${top-10} ${width+20} ${height+20}`} width="48" height="36" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" preserveAspectRatio="xMidYMid meet">
+  {objects.map((object,index)=>object.points?<polyline key={index} points={object.points.map(([x,y])=>[object.x+x,object.y+y].join(',')).join(' ')}/>:object.type==='ellipse'?<ellipse key={index} cx={object.x+object.width/2} cy={object.y+object.height/2} rx={object.width/2} ry={object.height/2}/>:object.type==='diamond'?<polygon key={index} points={`${object.x+object.width/2},${object.y} ${object.x+object.width},${object.y+object.height/2} ${object.x+object.width/2},${object.y+object.height} ${object.x},${object.y+object.height/2}`}/>:<rect key={index} x={object.x} y={object.y} width={object.width} height={object.height}/>)}
+ </svg>;
+}
 function App(){
  const [api,setApi]=useState(null),[ready,setReady]=useState(false),[connected,setConnected]=useState(false),[count,setCount]=useState(0),[status,setStatus]=useState('Подключаемся…'),[exporting,setExporting]=useState(false);
  const [sheets, setSheets] = useState(roomId ? [roomId] : []);
@@ -69,7 +77,6 @@ function App(){
  const [strokeWidth, setStrokeWidth] = useState(1);
  const [strokePanel, setStrokePanel] = useState(null);
  const editor = useRef(null);
- const geometryItems = useRef(null);
  const gridFiles = useRef(new Map());
  const [selectedGrid, setSelectedGrid] = useState(null);
  useEffect(() => {
@@ -315,29 +322,24 @@ function App(){
   return()=>{stopped=true;clearTimeout(retry);clearTimeout(m.timer);clearInterval(heartbeat);removeEventListener('beforeunload',unload);m.ws?.close()};
  },[api]);
  function pointer({pointer}){const m=model.current;if(!m.ready||m.ws?.readyState!==1||Date.now()-m.pointerAt<100)return;m.pointerAt=Date.now();m.ws.send(JSON.stringify({type:'pointer',x:pointer.x,y:pointer.y}))}
- function geometry() {
-  const specs = [
-   ['Треугольник', [{type: 'line', x: 0, y: 0, points: [[0, 0], [60, 100], [-60, 100], [0, 0]]}]],
-   ['Прямоугольный треугольник', [{type: 'line', x: 0, y: 0, points: [[0, 0], [0, 100], [120, 100], [0, 0]]}]],
-   ['Трапеция', [{type: 'line', x: 0, y: 0, points: [[0, 0], [100, 0], [130, 85], [-30, 85], [0, 0]]}]],
-   ['Ромб', [{type: 'diamond', x: 0, y: 0, width: 130, height: 100}]],
-   ['Окружность', [{type: 'ellipse', x: 0, y: 0, width: 120, height: 120}]],
-   ['Прямоугольник', [{type: 'rectangle', x: 0, y: 0, width: 160, height: 100}]],
-   ['Оси координат', [
-    {type: 'arrow', x: 0, y: 100, points: [[0, 0], [200, 0]]},
-    {type: 'arrow', x: 100, y: 200, points: [[0, 0], [0, -200]]},
-   ]],
-  ];
-  geometryItems.current ??= specs.map(([name, objects]) => ({
-    id: name,
-    name,
-    status: 'published',
-    created: 1,
-    elements: convertToExcalidrawElements(objects.map(object => ({
-     strokeColor: '#321653', strokeWidth: 2, roughness: 0, ...object,
-    }))),
-   }));
-  api.updateLibrary({libraryItems: geometryItems.current, merge: true, openLibraryMenu: true});
+ function insertGeometry(spec) {
+  if(!api || !access.canEdit || !ready || !connected)return;
+  const state=api.getAppState(),[left,top,right,bottom]=geometryBounds(spec.objects);
+  const centerX=state.width/(2*state.zoom.value)-state.scrollX;
+  const centerY=state.height/(2*state.zoom.value)-state.scrollY;
+  const group=crypto.randomUUID();
+  const elements=convertToExcalidrawElements(spec.objects.map(object=>({
+   ...structuredClone(object),x:object.x+centerX-(left+right)/2,y:object.y+centerY-(top+bottom)/2,
+   strokeColor:'#321653',strokeWidth:2,roughness:0,groupIds:[group],
+  })));
+  api.setActiveTool({type:'selection'});
+  api.updateScene({elements:[...api.getSceneElementsIncludingDeleted(),...elements],
+   appState:{selectedElementIds:Object.fromEntries(elements.map(e=>[e.id,true])),selectedGroupIds:{[group]:true}},
+   captureUpdate:CaptureUpdateAction.IMMEDIATELY});
+  requestAnimationFrame(()=>editor.current?.querySelector('.excalidraw')?.focus({preventScroll:true}));
+ }
+ function openLibrary(){
+  if(api && access.canEdit)api.updateLibrary({libraryItems:[],merge:true,openLibraryMenu:true});
  }
  function downloadSheetCopy() {
   const content = serializeAsJSON(api.getSceneElementsIncludingDeleted(), api.getAppState(), api.getFiles(), 'local');
@@ -430,22 +432,32 @@ function App(){
  }
  async function newRoom(){try{const room=await request('/api/rooms',{method:'POST'});location.assign(boardBase + room.url)}catch(error){setStatus(error.message)}}
  if(!roomId)return <main className="welcome"><div className="brand">Просто <span>5</span></div><h1>Тестовая общая доска</h1><p>Рисунки, текст и картинки сохраняются на этом сервере. Создайте доску и отправьте её ссылку ученику.</p><button onClick={newRoom}>Создать доску для урока</button><p role="status">{status==='Подключаемся…'?'':status}</p><p className="muted">Пробный доступ по отдельному паролю. Сохраните ссылку, чтобы вернуться к этому уроку.</p><a href="https://prosto5.ru/">На сайт «Просто 5»</a></main>;
- return <><header><a href="/" className="brand">Просто <span>5</span></a><div className="session"><strong>Тестовая доска</strong><span role="status" className={!connected?'offline':''}>{status} · Участников: {count}</span></div><nav aria-label="Действия с доской">
+ return <><header className="board-header"><div className="board-heading"><a href="/" className="brand">Просто <span>5</span></a><div className="session"><strong>{access.lessonId?'Доска занятия':'Общая доска'}</strong><span role="status" className={!connected?'offline':''}>{status} · Участников: {count}</span></div></div><nav aria-label="Действия с доской" className="board-toolbar">
   <div className="sheet-tools">
-   <label>Лист <select aria-label="Лист" value={roomId} disabled={!ready || switchingSheet}
-    onChange={event => void switchSheet(event.target.value)}>
-    {sheets.map((id, index) => <option key={id} value={id}>{index + 1} из {sheets.length}</option>)}
+   <label>Лист <select aria-label="Лист" value={roomId} disabled={!ready || switchingSheet} onChange={event=>void switchSheet(event.target.value)}>
+    {sheets.map((id,index)=><option key={id} value={id}>{index+1} из {sheets.length}</option>)}
    </select></label>
-   <span className={usage >= 95 ? 'sheet-full' : usage >= 80 ? 'sheet-warning' : ''} title="Учитываются число объектов и объём сохранённых данных">
-    Заполнено {usage}%
-   </span>
-   <button disabled={!access.canEdit || !connected || switchingSheet} onClick={() => void switchSheet()}>Новый лист</button>
-   <button disabled={!access.canEdit || !connected || switchingSheet || clearingSheet} onClick={clearSheet}>Очистить лист</button>
-  </div><button onClick={async()=>{try{await navigator.clipboard.writeText(location.href);setStatus('Ссылка скопирована — отправьте её ученику')}catch{prompt('Скопируйте ссылку',location.href)}}}>Ссылка ученику</button><button disabled={!access.canEdit || !ready} onClick={geometry}>Фигуры</button><button disabled={!access.canEdit || !ready || !connected} onClick={insertGrid}>Координатная сетка</button><button disabled={!ready||exporting} onClick={() => void pdf()}>{exporting?'Готовим PDF…':'Скачать все листы PDF'}</button>{access.canAttachPdf && <button disabled={!ready || exporting} onClick={() => {
-  const m = model.current;
-  if(m.dirty || m.pending.size || m.sending){setStatus('Дождитесь сохранения перед прикреплением PDF.');return;}
-  void pdf(true);
- }}>Прикрепить PDF к занятию</button>}<button disabled={!api} onClick={downloadSheetCopy}>Скачать копию</button><button onClick={connectionReport}>Диагностика связи</button></nav></header>{strokePanel && createPortal(
+   <div className={'sheet-usage '+(usage>=95?'sheet-full':usage>=80?'sheet-warning':'')} title="Заполнение листа: учитываются число объектов и объём сохранённых данных" aria-label={'Заполнено '+usage+'%'}>
+    <meter min="0" max="100" value={usage} aria-label="Заполнение листа"/><span>{usage}%</span>
+   </div>
+   <button disabled={!access.canEdit || !connected || switchingSheet} onClick={()=>void switchSheet()}>+ Лист</button>
+  </div>
+  <div className="drawing-actions"><ActionMenu label="Фигуры" wide disabled={!access.canEdit || !ready || !connected}>
+   <div className="geometry-shortcuts"><button disabled={!access.canEdit || !ready || !connected} onClick={insertGrid}>Координатная сетка</button><button onClick={openLibrary}>Мои заготовки — библиотека</button><p className="popover-hint">Свои заготовки можно сохранить файлом библиотеки.</p></div>
+   <p className="popover-title">Готовые фигуры</p>
+   {[...new Set(GEOMETRY.map(spec=>spec.category))].map(category=><section className="geometry-category" key={category}><h3>{category}</h3><div className="geometry-choices">
+    {GEOMETRY.filter(spec=>spec.category===category).map(spec=><button key={spec.id} onClick={()=>insertGeometry(spec)}><GeometryIcon objects={spec.objects}/><span>{spec.name}</span></button>)}
+   </div></section>)}
+  </ActionMenu></div>
+  <div className="save-actions"><ActionMenu label={exporting?'Готовим PDF…':'Сохранить'} disabled={!ready || exporting}>
+   <button disabled={!ready || exporting} onClick={()=>void pdf()}>Скачать PDF всех листов</button>
+   {access.canAttachPdf && <button disabled={!ready || exporting} onClick={()=>{
+    const m=model.current;if(m.dirty || m.pending.size || m.sending){setStatus('Дождитесь сохранения перед прикреплением PDF.');return;}void pdf(true);
+   }}>Прикрепить PDF к занятию</button>}
+   <div className="popover-section"><button disabled={!api} onClick={downloadSheetCopy}>Скачать копию текущего листа</button><p className="popover-hint">Редактируемый файл для восстановления записей.</p></div>
+  </ActionMenu>
+  <ActionMenu label="Ещё"><button onClick={connectionReport}>Диагностика связи</button><div className="popover-section"><button className="danger-action" disabled={!access.canEdit || !connected || switchingSheet || clearingSheet} onClick={clearSheet}>Очистить текущий лист</button><p className="popover-hint">Удаляет записи и картинки только с выбранного листа. Потребуется подтверждение.</p></div></ActionMenu></div>
+ </nav></header>{strokePanel && createPortal(
  <label className="stroke-width">
   <span className="stroke-width-label">Точная настройка толщины штриха</span>
   <input type="range" min="0.25" max="4" step="0.25"
