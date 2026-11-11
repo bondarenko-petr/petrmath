@@ -79,13 +79,12 @@ button:hover,.board-action-menu>summary:hover{background:#f1e8ff}button:disabled
 .board-save-section>summary{padding:9px 8px;cursor:pointer}.board-save-section button{display:block;text-align:left;width:100%;border:0}
 .floating-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:5px 12px;background:#fff;border-top:1px solid #e2d7f3;z-index:2}
 .floating-footer button{min-height:34px;padding:5px 9px}.board-connection{font-size:12px;color:#50654a}.board-connection.offline{color:#a12b3a}
-.editor [data-testid="dropdown-menu-button"]{display:none}
 .editor .App-menu_top__left{padding-top:50px}
 @media(max-width:1050px){.editor{margin-top:62px}.editor .App-menu_top__left{padding-top:0}}
 @media(max-width:600px){.floating-header{top:6px;left:6px;right:6px}.floating-footer{padding:5px 8px}.floating-drawing-actions{justify-content:center}.editor .App-toolbar-container{flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px)}.board-connection{font-size:11px}}
 .editor .zoom-actions{display:none}
 .board-zoom{display:flex;align-items:center;gap:3px}
-.editor .excalidraw [data-testid="dropdown-menu-button"]{display:none!important}
+.editor .excalidraw .dropdown-menu-button{display:none!important}
 .figure-types{grid-template-columns:repeat(5,minmax(0,1fr))}
 @media(max-width:600px){
  .editor .excalidraw .App-toolbar-container{flex-wrap:wrap!important}

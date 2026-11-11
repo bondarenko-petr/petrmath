@@ -508,7 +508,7 @@ function App(){
      </details>
      <button disabled={!canDraw} onClick={openLibrary}>Мои заготовки</button>
      <button onClick={connectionReport}>Диагностика связи</button>
-     <button onClick={()=>editor.current?.querySelector('[data-testid="dropdown-menu-button"]')?.click()}>Настройки холста</button>
+     <button onClick={()=>requestAnimationFrame(()=>editor.current?.querySelector('.dropdown-menu-button')?.click())}>Настройки холста</button>
      <div className="popover-section"><button className="danger-action" disabled={!canDraw} onClick={clearSheet}>Очистить текущий лист</button></div>
     </ActionMenu>
    </div>
