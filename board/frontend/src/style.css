@@ -151,3 +151,31 @@ button:hover,.board-action-menu>summary:hover{background:#f1e8ff}button:disabled
  .editor .excalidraw .floating-drawing-actions > details > summary,
  .editor .excalidraw .App-toolbar-container .mobile-misc-tools-container .ToolIcon__icon{width:1.5rem;height:1.5rem}
 }
+
+.pdf-import-dialog {
+ width:min(680px,calc(100vw - 24px));max-height:calc(100dvh - 32px);
+ padding:18px;border:1px solid #e2d7f3;border-radius:14px;background:#fff;color:#321653;
+ box-shadow:0 16px 48px #30234030;
+}
+.pdf-import-dialog::backdrop{background:#24173865}
+.pdf-import-dialog form{display:grid;gap:12px}
+.pdf-import-heading,.pdf-import-footer,.pdf-import-selection,.pdf-import-paging{
+ display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+}
+.pdf-import-heading{justify-content:space-between}
+.pdf-import-heading h2,.pdf-import-heading p,.pdf-import-error{margin:0;overflow-wrap:anywhere}
+.pdf-import-heading>div{min-width:0;flex:1}
+.pdf-import-heading p,.pdf-import-destination small{font-size:12px;color:#665675}
+.pdf-import-dialog fieldset{min-width:0;border:1px solid #e2d7f3;border-radius:9px;padding:10px}
+.pdf-import-selection input{width:105px;padding:6px;border:1px solid #d6c0f8;border-radius:6px}
+.pdf-import-previews{display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:8px;margin-top:10px}
+.pdf-import-previews label{display:grid;justify-items:center;gap:4px;padding:5px;background:#f6f2fb;border:1px solid #e2d7f3;border-radius:7px;font-size:12px}
+.pdf-import-previews label:has(:checked){background:#eee4ff;border-color:#a680ef}
+.pdf-import-previews canvas{width:100%;height:96px;object-fit:contain}
+.pdf-import-paging{justify-content:center;margin-top:8px}
+.pdf-import-destination{display:grid;gap:8px}
+.pdf-import-destination small{display:block;padding-left:24px}
+.pdf-import-error{color:#a12b3a}
+.pdf-import-footer>span{flex:1;min-width:120px;font-size:13px}
+.pdf-import-footer .pdf-import-confirm{background:#7015ef;color:white}
+.pdf-import-loading{position:fixed;z-index:30;top:64px;left:50%;transform:translateX(-50%);padding:10px;background:#fff}

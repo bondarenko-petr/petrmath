@@ -1,15 +1,17 @@
 import './bootstrap.js';
 import {createLessonPdf} from './lesson-pdf.js';
-import React,{useEffect,useRef,useState} from 'react';
+import React,{lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {createRoot} from 'react-dom/client';
-import {Excalidraw,MainMenu,CaptureUpdateAction,reconcileElements,newElementWith,convertToExcalidrawElements,serializeAsJSON} from '@excalidraw/excalidraw';
+import {Excalidraw,MainMenu,CaptureUpdateAction,reconcileElements,newElementWith,convertToExcalidrawElements,getCommonBounds,serializeAsJSON} from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import './style.css';
 import {ActionMenu} from './action-menu.jsx';
 import {GEOMETRY,geometryBounds} from './geometry.mjs';
 import {DEFAULT_GRID_RANGE, GridControls, gridDimensions, renderGridFile} from './coordinate-grid.jsx';
-const BUILD='lesson-floating-panels-1';
+const PdfImport=lazy(()=>import('./pdf-import.jsx').then(module=>({default:module.PdfImport})));
+const isPdf=file=>file.type==='application/pdf'||/\.pdf$/i.test(file.name);
+const BUILD='lesson-pdf-import-1';
 const DIAGNOSTICS_KEY = 'prosto5-board-connection-events';
 const DIAGNOSTICS_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 function recentDiagnostics(events) {
@@ -95,6 +97,9 @@ function App(){
  const [strokeWidth, setStrokeWidth] = useState(1);
  const [strokePanel, setStrokePanel] = useState(null);
  const editor = useRef(null);
+ const pdfInput = useRef(null);
+ const importBatch = useRef(null);
+ const [pdfFile,setPdfFile] = useState(null);
  const [toolbar, setToolbar] = useState(null);
  const [lessonSchedule, setSchedule] = useState(null);
  const [zoomPercent, setZoomPercent] = useState(100);
@@ -299,6 +304,7 @@ function App(){
    if(message.initial){diagnostic('scene_loaded',{connection:message.clientId,objects:message.elements.length});m.clientId=message.clientId;m.pending.clear();m.files=new Set(message.fileIds);m.sent.clear();m.cursors.clear();}
    const missing=(message.fileIds||[]).filter(id=>!api.getFiles()[id]);
    const files=await Promise.all(missing.map(id=>request(`/api/rooms/${roomId}/files/${encodeURIComponent(id)}`)));if(stopped)return;if(files.length)api.addFiles(files);
+   for(const id of message.fileIds ?? [])m.files.add(id);
    const local=api.getSceneElementsIncludingDeleted(),merged=reconcileElements(local,message.elements,api.getAppState());
    for(const element of message.elements)m.sent.set(element.id,stamp(element));
    const localBackground=api.getAppState().viewBackgroundColor,unsentBackground=m.lastBackground!==null&&localBackground!==m.lastBackground;
@@ -421,6 +427,56 @@ function App(){
    setSwitchingSheet(false);
   }
  }
+ function choosePdf(file) {
+  if(!file)return;
+  if(!access.canEdit || !ready || !connected || switchingSheet || clearingSheet) {
+   setStatus('Импорт PDF доступен при подключении в режиме редактирования.');
+   return;
+  }
+  if(!isPdf(file) || file.size>32*1024*1024) {
+   setStatus('Выберите PDF размером до 32 МБ.');
+   return;
+  }
+  importBatch.current={generation:model.current.generation};
+  setPdfFile(file);
+ }
+ function receivePdf(event,files) {
+  const file=Array.from(files ?? []).find(isPdf);
+  if(!file)return;
+  event.preventDefault();
+  event.stopPropagation();
+  if(!pdfFile)choosePdf(file);
+ }
+ async function importPdf(destination,pages) {
+  const m=model.current;
+  const batch=importBatch.current;
+  if(!access.canEdit || !m.ready || m.ws?.readyState!==1)throw Error('Подключитесь к доске, чтобы сохранить страницы.');
+  if(batch.generation!==m.generation)throw Error('Лист был очищен. Откройте окно импорта заново.');
+  if(m.dirty || m.pending.size || m.sending)throw Error('Дождитесь сохранения текущего листа и повторите импорт.');
+  if(batch.pages!==pages || batch.destination!==destination){
+   const existing=api.getSceneElements();
+   const {width,zoom,scrollX,scrollY}=api.getAppState();
+   const bounds=existing.length?getCommonBounds(existing):null;
+   const x=bounds?bounds[0]:width/(2*zoom.value)-scrollX-450;
+   let y=bounds?bounds[3]+80:-scrollY+140;
+   const objects=pages.map(page=>{
+    const height=900*page.height/page.width;
+    const item={type:'image',fileId:page.file.id,status:'saved',width:900,height,
+     x:destination==='sheets'?0:x,y:destination==='sheets'?0:y};
+    y+=height+64;
+    return item;
+   });
+   const images=convertToExcalidrawElements(objects);
+   const body=JSON.stringify({destination,pages:pages.map((page,index)=>({file:page.file,element:images[index]}))});
+   if(body.length>7*1024*1024)throw Error('Выбранные страницы слишком большие. Импортируйте их частями.');
+   Object.assign(batch,{destination,pages,images,body});
+  }
+  const result=await request(`/api/rooms/${roomId}/pdf-import?generation=${batch.generation}`,{
+   method:'POST',headers:{'Content-Type':'application/json'},body:batch.body,signal:AbortSignal.timeout(60000),
+  });
+  if(destination==='sheets')location.assign(boardBase+'/room/'+result.sheets[0]);
+  else api.scrollToContent([batch.images[0]],{fitToContent:true});
+ }
  async function pdf(attach = false) {
   if (!api) return;
   setExporting(true);
@@ -506,6 +562,7 @@ function App(){
    }}>Прикрепить PDF к занятию</button>}
    <div className="popover-section"><button disabled={!api} onClick={downloadSheetCopy}>Скачать копию текущего листа</button><p className="popover-hint">Редактируемый файл для восстановления записей.</p></div>
      </details>
+     <button disabled={!canDraw} onClick={()=>pdfInput.current?.click()}>Импорт PDF</button>
      <button disabled={!canDraw} onClick={openLibrary}>Мои заготовки</button>
      <button onClick={connectionReport}>Диагностика связи</button>
      <button onClick={()=>requestAnimationFrame(()=>editor.current?.querySelector('.dropdown-menu-button')?.click())}>Настройки холста</button>
@@ -514,6 +571,13 @@ function App(){
    </div>
    {lessonSchedule && <LessonTimer schedule={lessonSchedule}/>}
   </header>
+  <input ref={pdfInput} type="file" accept="application/pdf,.pdf" hidden onChange={event=>{
+   choosePdf(event.currentTarget.files?.[0]);
+   event.currentTarget.value='';
+  }}/>
+  {pdfFile && <Suspense fallback={<div className="pdf-import-loading" role="status">Загружаем импорт PDF…</div>}>
+   <PdfImport file={pdfFile} freeSheets={Math.max(0,30-sheets.length)} onClose={()=>setPdfFile(null)} onImport={importPdf}/>
+  </Suspense>}
   {toolbar && createPortal(drawingActions, toolbar)}
   {strokePanel && createPortal(
  <label className="stroke-width">
@@ -524,7 +588,10 @@ function App(){
    <line x1="9" y1="10" x2="33" y2="10" stroke="currentColor"
     strokeWidth={strokeWidth * 4.25} strokeLinecap="round" />
   </svg>
- </label>, strokePanel)}<div className="editor" ref={editor}>{selectedGrid && <GridControls key={selectedGrid.id} range={selectedGrid} disabled={!access.canEdit || !connected} onChange={resizeGrid} />}<Excalidraw excalidrawAPI={setApi} onChange={changed} onPointerUpdate={pointer} isCollaborating={true} viewModeEnabled={!access.canEdit || !connected || switchingSheet || clearingSheet} langCode="ru-RU" initialData={{elements:[],appState:{isLoading:true,viewBackgroundColor:'#ffffff',currentItemRoughness:0}}} validateEmbeddable={()=>false}><MainMenu><MainMenu.DefaultItems.LoadScene/><MainMenu.DefaultItems.SaveAsImage/><MainMenu.DefaultItems.ClearCanvas/><MainMenu.Separator/><MainMenu.DefaultItems.ToggleTheme/><MainMenu.DefaultItems.ChangeCanvasBackground/></MainMenu></Excalidraw></div>
+ </label>, strokePanel)}<div className="editor" ref={editor}
+  onDragOverCapture={event=>{if(Array.from(event.dataTransfer.items).some(item=>item.kind==='file'&&item.type==='application/pdf'))event.preventDefault();}}
+  onDropCapture={event=>receivePdf(event,event.dataTransfer.files)}
+  onPasteCapture={event=>receivePdf(event,event.clipboardData.files)}>{selectedGrid && <GridControls key={selectedGrid.id} range={selectedGrid} disabled={!access.canEdit || !connected} onChange={resizeGrid} />}<Excalidraw excalidrawAPI={setApi} onChange={changed} onPointerUpdate={pointer} isCollaborating={true} viewModeEnabled={!access.canEdit || !connected || switchingSheet || clearingSheet} langCode="ru-RU" initialData={{elements:[],appState:{isLoading:true,viewBackgroundColor:'#ffffff',currentItemRoughness:0}}} validateEmbeddable={()=>false}><MainMenu><MainMenu.DefaultItems.LoadScene/><MainMenu.DefaultItems.SaveAsImage/><MainMenu.DefaultItems.ClearCanvas/><MainMenu.Separator/><MainMenu.DefaultItems.ToggleTheme/><MainMenu.DefaultItems.ChangeCanvasBackground/></MainMenu></Excalidraw></div>
   <footer className="floating-footer">
   <div className="sheet-tools">
    <label>Лист <select aria-label="Лист" value={roomId} disabled={!ready || switchingSheet} onChange={event=>void switchSheet(event.target.value)}>

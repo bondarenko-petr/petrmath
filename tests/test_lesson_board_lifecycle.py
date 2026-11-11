@@ -41,6 +41,58 @@ class LifecycleTests(unittest.TestCase):
   with database() as(c,p):c.execute("UPDATE lessons SET starts_at=?,ends_at=?,status='completed' WHERE id=1",(int(time.time())-4000,int(time.time())-10))
   mark_completed(1)
  async def pdf(self,sheets):return b'%PDF-1.7\n'+str(len(sheets)).encode()
+ def test_pdf_import_is_atomic_and_retries_do_not_duplicate_pages(self):
+  room = self.open()
+  base = f'/board/api/rooms/{room}'
+  headers = {'X-Requested-With': 'Prosto5Board', 'Origin': 'http://testserver'}
+
+  def page(number):
+   return {
+    'element': {'id': f'page-{number}', 'type': 'image', 'fileId': f'file-{number}',
+                'version': 1, 'versionNonce': 1, 'x': 0, 'y': number * 100, 'width': 60, 'height': 80},
+    'file': {'id': f'file-{number}', 'mimeType': 'image/jpeg', 'dataURL': 'data:image/jpeg;base64,/9j/AA=='},
+   }
+
+  def submit(destination, pages):
+   return self.teacher.post(base + '/pdf-import', headers=headers, json={'destination': destination, 'pages': pages})
+
+  broken = page(2)
+  broken['file']['dataURL'] = 'invalid'
+  self.assertEqual(submit('current', [page(1), broken]).status_code, 422)
+  self.assertEqual(self.teacher.get(base + '/snapshot').json()['elements'], [])
+  with patch('board.app.MAX_SHEETS', 2):
+   self.assertEqual(submit('sheets', [page(1), page(2)]).status_code, 409)
+  self.assertEqual(self.teacher.get(base + '/sheets').json()['sheets'], [room])
+
+  def fail_commit(path, value):
+   if path.name in ('scene.json', 'sheets.json'):
+    raise OSError('test write failure')
+   atomic(path, value)
+
+  with patch('board.app.atomic', side_effect=fail_commit):
+   self.assertEqual(submit('current', [page(1), page(2)]).status_code, 503)
+   self.assertEqual(submit('sheets', [page(3), page(4)]).status_code, 503)
+  self.assertEqual(self.teacher.get(base + '/snapshot').json()['elements'], [])
+  self.assertEqual(self.teacher.get(base + '/sheets').json()['sheets'], [room])
+  self.assertEqual(list((self.store.path / room / 'files').glob('*.json')), [])
+
+  current = submit('current', [page(1), page(2)])
+  self.assertEqual(current.status_code, 201, current.text)
+  self.assertEqual(submit('current', [page(1), page(2)]).status_code, 201)
+  self.assertEqual(len(self.teacher.get(base + '/snapshot').json()['elements']), 2)
+  separate = submit('sheets', [page(3), page(4)])
+  self.assertEqual(separate.status_code, 201, separate.text)
+  ids = separate.json()['sheets']
+  self.assertEqual(submit('sheets', [page(3), page(4)]).json()['sheets'], ids)
+  self.assertEqual(self.teacher.get(base + '/sheets').json()['sheets'], [room, *ids])
+  for sheet, number in zip(ids, (3, 4)):
+   path = f'/board/api/rooms/{sheet}'
+   self.assertEqual(self.student.get(path + '/snapshot').json()['elements'][0]['id'], f'page-{number}')
+   self.assertEqual(self.student.get(path + f'/files/file-{number}').status_code, 200)
+  self.complete()
+  denied = self.student.post(base + '/pdf-import', headers=headers, json={'destination': 'current', 'pages': [page(5)]})
+  self.assertEqual(denied.status_code, 403)
+
  def test_time_boundary_and_ownership(self):
   with patch('lesson_board.time.time',return_value=time.time()-5):
    self.assertEqual(self.student.post('/api/lessons/1/board',headers=self.headers).status_code,403)

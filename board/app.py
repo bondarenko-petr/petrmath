@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import time
 from fastapi import FastAPI,Request,HTTPException,WebSocket,WebSocketDisconnect
 from fastapi.responses import FileResponse,JSONResponse
@@ -28,7 +29,7 @@ MAX_FRAME=1024*1024
 MESSAGES_PER_SECOND = 40
 MESSAGE_BURST = 120
 LOG=logging.getLogger('uvicorn.error')
-BUILD='lesson-floating-panels-1'
+BUILD='lesson-pdf-import-1'
 
 
 def encode(value):return json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False)
@@ -266,6 +267,101 @@ def create_app(data_dir=None,origin=None,static_dir=None,trusted_proxy='127.0.0.
             await asyncio.gather(*(store.rooms[sheet].broadcast({'type': 'sheets', 'sheets': [*sheets, sheet_id]})
                                    for sheet in sheets if sheet in store.rooms))
         return {'id': sheet_id}
+
+    @app.post('/api/rooms/{room_id}/pdf-import', status_code=201)
+    async def import_pdf_pages(room_id: str, request: Request, generation: int = 0):
+        user = await auth(request, room_id, write=True)
+        origin_check(request)
+        if request.headers.get('x-requested-with') != 'Prosto5Board':
+            raise HTTPException(403, 'Недопустимый запрос')
+        limit(user, 'pdf-import', 10, 60)
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 7 * 1024 * 1024:
+                raise HTTPException(413, 'Выбранные страницы слишком большие. Импортируйте их частями.')
+        try:
+            payload = json.loads(body)
+            destination = payload['destination']
+            pages = payload['pages']
+            if destination not in ('current', 'sheets') or not isinstance(pages, list) or not 1 <= len(pages) <= MAX_SHEETS:
+                raise ValueError('Выберите от 1 до 30 страниц и место вставки.')
+            items = elements([page['element'] for page in pages])
+            files = [image(page['file'])[0] for page in pages]
+            if len({file['id'] for file in files}) != len(files):
+                raise ValueError('Изображения страниц должны иметь разные идентификаторы.')
+            for item, file in zip(items, files):
+                if item['type'] != 'image' or item.get('isDeleted') or item.get('fileId') != file['id']:
+                    raise ValueError('Некорректное изображение страницы.')
+        except (ValueError, TypeError, KeyError, UnicodeError) as error:
+            raise HTTPException(422, str(error)[:200]) from error
+
+        await auth(request, room_id, write=True)
+        room = store.room(room_id)
+        async with store.creation_lock, room.lock:
+            writable(room)
+            if generation != room.scene.get('generation', 0):
+                raise HTTPException(409, 'Лист был очищен. Откройте окно импорта заново.')
+            root_id, sheets = lesson_sheets(room_id)
+            if destination == 'sheets':
+                new_ids = [
+                    hashlib.sha256(f"{root_id}:pdf:{item['id']}".encode()).hexdigest()[:48]
+                    for item in items
+                ]
+                if all(sheet_id in sheets for sheet_id in new_ids):
+                    return {'sheets': new_ids}
+                if any(sheet_id in sheets for sheet_id in new_ids) or len(sheets) + len(new_ids) > MAX_SHEETS:
+                    raise HTTPException(409, 'Недостаточно свободных листов. Максимум — 30 листов на урок.')
+                created = []
+                try:
+                    for sheet_id, item, file in zip(new_ids, items, files):
+                        directory = data / sheet_id
+                        directory.mkdir(mode=0o700)
+                        created.append(directory)
+                        scene = {'elements': [item], 'background': '#ffffff', 'revision': 0,
+                                 'created': int(time.time()), 'lesson': root_id}
+                        await asyncio.to_thread(atomic, directory / 'sheet', True)
+                        await asyncio.to_thread(atomic, directory / 'files' / (file['id'] + '.json'), file)
+                        await asyncio.to_thread(atomic, directory / 'scene.json', scene)
+                    updated = [*sheets, *new_ids]
+                    await asyncio.to_thread(atomic, data / root_id / 'sheets.json', updated)
+                except OSError as error:
+                    for directory in created:
+                        await asyncio.to_thread(shutil.rmtree, directory, True)
+                    raise HTTPException(503, 'Не удалось сохранить новые листы. Повторите импорт.') from error
+                await asyncio.gather(*(store.rooms[sheet].broadcast({'type': 'sheets', 'sheets': updated})
+                                       for sheet in sheets if sheet in store.rooms))
+                return {'sheets': new_ids}
+
+            existing = {item['id']: item for item in room.scene['elements']}
+            if all(existing.get(item['id'], {}).get('fileId') == item['fileId'] for item in items):
+                return {'sheets': [room_id]}
+            if any(item['id'] in existing for item in items):
+                raise HTTPException(409, 'Страницы с такими идентификаторами уже есть на листе.')
+            targets = [room.path / 'files' / (file['id'] + '.json') for file in files]
+            if any(target.exists() for target in targets):
+                raise HTTPException(409, 'Идентификатор картинки уже используется.')
+            used = sum(path.stat().st_size for path in (room.path / 'files').glob('*.json'))
+            if used + sum(len(encode(file).encode()) for file in files) > MAX_FILES_BYTES:
+                raise HTTPException(413, 'На текущем листе не хватает места для картинок. Выберите отдельные листы.')
+            try:
+                merged, _ = merge(room.scene['elements'], items)
+            except ValueError as error:
+                raise HTTPException(409, str(error)) from error
+            next_scene = {**room.scene, 'elements': merged, 'revision': room.scene['revision'] + 1}
+            try:
+                for target, file in zip(targets, files):
+                    await asyncio.to_thread(atomic, target, file)
+                await asyncio.to_thread(atomic, room.path / 'scene.json', next_scene)
+            except OSError as error:
+                for target in targets:
+                    target.unlink(missing_ok=True)
+                raise HTTPException(503, 'Не удалось сохранить страницы. Повторите импорт.') from error
+            room.scene = next_scene
+            await room.broadcast({'type': 'scene', 'elements': items, 'background': next_scene['background'],
+                                  'revision': next_scene['revision'], 'usage': sheet_usage(next_scene, room.path / 'scene.json'),
+                                  'fileIds': [file['id'] for file in files]})
+            return {'sheets': [room_id]}
 
     @app.get('/api/rooms/{room_id}/snapshot')
     async def sheet_snapshot(room_id: str, request: Request):
