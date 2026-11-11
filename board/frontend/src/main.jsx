@@ -95,13 +95,6 @@ function App(){
  const [strokeWidth, setStrokeWidth] = useState(1);
  const [strokePanel, setStrokePanel] = useState(null);
  const editor = useRef(null);
- const [smallScreen, setSmallScreen] = useState(()=>window.matchMedia('(max-width: 600px)').matches);
- useEffect(()=>{
-  const query=window.matchMedia('(max-width: 600px)');
-  const update=()=>setSmallScreen(query.matches);
-  query.addEventListener('change',update);
-  return ()=>query.removeEventListener('change',update);
- },[]);
  const [toolbar, setToolbar] = useState(null);
  const [lessonSchedule, setSchedule] = useState(null);
  const [zoomPercent, setZoomPercent] = useState(100);
@@ -115,11 +108,18 @@ function App(){
   const container = editor.current;
   const findStrokePanel = () => {
    // Excalidraw has no custom control slot in the built-in style panel.
-   setToolbar(container.querySelector('.App-toolbar-container'));
+   const tools = container.querySelector('.App-toolbar-container');
+   setToolbar(tools);
+   for (const hint of tools?.querySelectorAll('.HintViewer') ?? []) {
+    hint.hidden = hint.textContent.trim().startsWith('Чтобы двигать холст');
+   }
+   const hand = tools?.querySelector('[aria-keyshortcuts="h" i]');
+   const handLabel = hand?.closest('label');
+   if (handLabel) handLabel.title = 'Рука (H). Перетаскивайте холст мышью. Можно также удерживать пробел или колесо мыши.';
    setStrokePanel(container.querySelector('[data-testid="strokeWidth-thin"]')?.closest('fieldset') ?? null);
   };
   const observer = new MutationObserver(findStrokePanel);
-  observer.observe(container, {childList: true, subtree: true});
+  observer.observe(container, {childList: true, subtree: true, characterData: true});
   findStrokePanel();
   return () => observer.disconnect();
  }, []);
@@ -477,7 +477,7 @@ function App(){
  }
  const canDraw = access.canEdit && ready && connected && !switchingSheet && !clearingSheet;
  const drawingActions = <div className="floating-drawing-actions">
-  <ActionMenu label="Фигуры" icon={<span aria-hidden="true">△</span>} compact disabled={!canDraw}>
+  <ActionMenu label="Фигуры" icon={<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="10" width="9" height="10" rx="1.5"/><circle cx="15.5" cy="8.5" r="5"/><path d="m14 20 4-6 4 6z"/></svg>} compact disabled={!canDraw}>
    <div className="figure-types">
     {categories.map((name,index)=><button type="button" key={name} data-keep-menu title={name} aria-label={name}
      aria-pressed={!allFigures && category===name} onClick={()=>{setCategory(name);setAllFigures(false);}}>
@@ -492,7 +492,7 @@ function App(){
    </div>
    <button type="button" data-keep-menu aria-pressed={allFigures} onClick={()=>setAllFigures(value=>!value)}>Все фигуры</button>
   </ActionMenu>
-  <button type="button" className="grid-tool" title="Координатная сетка" aria-label="Координатная сетка" disabled={!canDraw} onClick={insertGrid}>▦</button>
+  <button type="button" className="grid-tool" title="Координатная сетка" aria-label="Координатная сетка" disabled={!canDraw} onClick={insertGrid}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M9 4v16m6-16v16M4 9h16M4 15h16"/></svg></button>
  </div>;
  return <>
   <header className="floating-header">
@@ -514,7 +514,7 @@ function App(){
    </div>
    {lessonSchedule && <LessonTimer schedule={lessonSchedule}/>}
   </header>
-  {smallScreen ? <div className="mobile-drawing-actions">{drawingActions}</div> : toolbar && createPortal(drawingActions, toolbar)}
+  {toolbar && createPortal(drawingActions, toolbar)}
   {strokePanel && createPortal(
  <label className="stroke-width">
   <span className="stroke-width-label">Точная настройка толщины штриха</span>

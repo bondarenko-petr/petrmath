@@ -86,9 +86,68 @@ button:hover,.board-action-menu>summary:hover{background:#f1e8ff}button:disabled
 .board-zoom{display:flex;align-items:center;gap:3px}
 .editor .excalidraw .dropdown-menu-button{display:none!important}
 .figure-types{grid-template-columns:repeat(5,minmax(0,1fr))}
-@media(max-width:600px){
- .editor .excalidraw .App-toolbar-container{flex-wrap:wrap!important}
- .floating-drawing-actions{flex-basis:100%}
+
+/* Share one surface between native drawing tools and lesson tools. */
+.editor .excalidraw .App-toolbar-container:has(.floating-drawing-actions){
+ display:flex;align-items:center;justify-content:center;flex-wrap:wrap;
+ width:max-content;max-width:calc(100vw - 20px);gap:4px;padding:4px 6px;
+ background:var(--island-bg-color,#fff);border:1px solid var(--color-surface-low,#e6e1ee);
+ border-radius:12px;box-shadow:0 3px 12px #30234012;
 }
-.mobile-drawing-actions{position:absolute;top:59px;left:0;right:0;z-index:14;display:flex;justify-content:center;pointer-events:none}
-@media(max-width:600px){.editor{margin-top:103px}}
+.editor .excalidraw .App-toolbar-container:has(.floating-drawing-actions) > .App-toolbar{
+ background:transparent;border:0;box-shadow:none;padding:0;min-width:0;
+ max-width:100%;flex-shrink:1;
+}
+.editor .excalidraw .App-toolbar-container .floating-drawing-actions{
+ border-inline-start:1px solid var(--color-surface-low,#e6e1ee);padding-inline-start:5px;
+}
+.editor .excalidraw .floating-drawing-actions > .grid-tool,
+.editor .excalidraw .floating-drawing-actions > details > summary{
+ display:grid;place-items:center;width:var(--lg-button-size,2rem);
+ height:var(--lg-button-size,2rem);min-height:0;padding:0;border:0;
+ border-radius:var(--border-radius-md,8px);background:transparent;
+ color:var(--icon-fill-color,#1b1b1f);
+}
+.editor .excalidraw .floating-drawing-actions > .grid-tool:hover,
+.editor .excalidraw .floating-drawing-actions > details > summary:hover{
+ background:var(--button-hover-bg,#f1eff7);
+}
+.editor .excalidraw .floating-drawing-actions > details[open] > summary{
+ background:var(--color-surface-primary-container,#e4dcff);box-shadow:none;
+}
+.floating-drawing-actions > .grid-tool svg,.floating-drawing-actions > details > summary svg{
+ width:var(--lg-icon-size,1rem);height:var(--lg-icon-size,1rem);
+ fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;
+}
+.editor .HintViewer[hidden]{display:none!important}
+@media(max-width:600px){
+ .editor .excalidraw .App-toolbar-container:has(.floating-drawing-actions) > .App-toolbar > div,
+ .editor .excalidraw .App-toolbar-container:has(.floating-drawing-actions) .shapes-section{
+  flex-wrap:wrap;justify-content:center;
+ }
+ .editor .excalidraw .App-toolbar-container:has(.floating-drawing-actions) .floating-drawing-actions{
+  flex-basis:100%;border-inline-start:0;border-top:1px solid var(--color-surface-low,#e6e1ee);
+  padding:4px 0 0;
+ }
+}
+.editor .excalidraw .App-toolbar-container:has(.floating-drawing-actions) > .Island{
+ width:auto!important;border-radius:0;box-shadow:none!important;
+ background:transparent;transition:none;
+}
+.editor .excalidraw .App-toolbar-container:has(.floating-drawing-actions) > .mobile-misc-tools-container{
+ position:static;flex-direction:row;align-items:center;overflow:visible;
+ border:0;border-radius:0;background:transparent;
+}
+@media(min-width:761px){
+ .editor .excalidraw .App-toolbar-container:has(.floating-drawing-actions){flex-wrap:nowrap}
+}
+@media(max-width:450px){
+ .editor .excalidraw .floating-drawing-actions > .grid-tool,
+ .editor .excalidraw .floating-drawing-actions > details > summary,
+ .editor .excalidraw .App-toolbar-container .mobile-misc-tools-container .ToolIcon__icon{width:1.8rem;height:1.8rem}
+}
+@media(max-width:379px){
+ .editor .excalidraw .floating-drawing-actions > .grid-tool,
+ .editor .excalidraw .floating-drawing-actions > details > summary,
+ .editor .excalidraw .App-toolbar-container .mobile-misc-tools-container .ToolIcon__icon{width:1.5rem;height:1.5rem}
+}
