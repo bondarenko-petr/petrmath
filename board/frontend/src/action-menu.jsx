@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-export function ActionMenu({label,children,wide=false,disabled=false}) {
+export function ActionMenu({label,children,wide=false,disabled=false,icon,compact=false}) {
  const ref=useRef(null);
  const [position,setPosition]=useState({top:0,left:12});
  useEffect(()=>{
@@ -10,9 +10,9 @@ export function ActionMenu({label,children,wide=false,disabled=false}) {
  },[]);
  function positionPanel(){
   const element=ref.current;if(!element)return;
-  const box=element.querySelector('summary').getBoundingClientRect();const width=Math.min(wide?440:300,innerWidth-24);
+  const box=element.querySelector('summary').getBoundingClientRect();const width=Math.min(compact?224:wide?440:300,innerWidth-24);
   const top=Math.min(box.bottom+8,innerHeight-90);
-  setPosition({top,left:Math.max(12,Math.min(box.left,innerWidth-width-12)),width,maxHeight:Math.max(64,innerHeight-top-12)});
+  setPosition({top,left:Math.max(12,Math.min(compact?box.left+(box.width-width)/2:box.left,innerWidth-width-12)),width,maxHeight:Math.max(64,innerHeight-top-12)});
  }
  function toggle(){
   const element=ref.current;if(!element?.open)return;
@@ -21,9 +21,9 @@ export function ActionMenu({label,children,wide=false,disabled=false}) {
  }
  return <details ref={ref} className="board-action-menu" onToggle={toggle}
   onKeyDown={event=>{if(event.key==='Escape'){ref.current.open=false;ref.current.querySelector('summary').focus();event.preventDefault();}}}>
-  <summary aria-disabled={disabled} onClick={event=>{if(disabled)event.preventDefault();else positionPanel();}}>{label}<span aria-hidden="true">▾</span></summary>
+  <summary aria-label={label} title={icon?label:undefined} aria-disabled={disabled} onClick={event=>{if(disabled)event.preventDefault();else positionPanel();}}>{icon || label}{!icon && <span aria-hidden="true">▾</span>}</summary>
   <div role="group" aria-label={label} className="board-popover" style={position} onClick={event=>{
-   if(event.target.closest('button') && !event.target.closest('button').disabled){ref.current.open=false;if(event.detail===0)ref.current.querySelector('summary').focus();}
+   if(event.target.closest('button:not([data-keep-menu])') && !event.target.closest('button').disabled){ref.current.open=false;if(event.detail===0)ref.current.querySelector('summary').focus();}
   }}>{children}</div>
  </details>;
 }

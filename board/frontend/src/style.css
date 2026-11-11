@@ -61,3 +61,35 @@ button:hover,.board-action-menu>summary:hover{background:#f1e8ff}button:disabled
 .geometry-shortcuts{border-bottom:1px solid #e9e2f2;padding-bottom:10px;margin-bottom:10px}
 .geometry-shortcuts>button{display:block;width:100%;text-align:left;border:0}
 @media(max-width:600px){.geometry-choices svg{width:36px;height:30px}}
+
+/* Lesson controls sit around the drawing canvas. */
+.floating-header{position:absolute;top:10px;left:12px;right:12px;z-index:15;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;pointer-events:none}
+.floating-header>*{pointer-events:auto}
+.board-island,.lesson-timer{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e2d7f3;border-radius:12px;padding:5px 8px;box-shadow:0 3px 12px #30234012}
+.board-island .brand{font-size:17px}.board-island .brand span{width:27px;height:27px}
+.board-island summary,.floating-drawing-actions summary,.floating-drawing-actions .grid-tool{min-height:34px;padding:5px 8px}
+.lesson-timer{display:grid;text-align:right;gap:1px;font-size:12px;min-height:46px}.lesson-timer strong{font-variant-numeric:tabular-nums;font-size:17px}.lesson-timer.timer-warning{color:#9a3c0d;background:#fff3e7}
+.floating-drawing-actions{display:flex;gap:4px;align-items:center;pointer-events:auto}
+.floating-drawing-actions .board-popover{color:#321653}
+.floating-drawing-actions .board-popover>button{justify-content:center;text-align:center;background:#f5effe}
+.figure-types,.figure-variants{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin-bottom:6px}
+.figure-types button,.figure-variants button{display:grid;place-items:center;padding:3px;min-height:36px;min-width:0}
+.figure-types button[aria-pressed=true]{background:#eee4ff;border-color:#a680ef}
+.figure-variants svg{width:29px;height:26px}
+.board-save-section>summary{padding:9px 8px;cursor:pointer}.board-save-section button{display:block;text-align:left;width:100%;border:0}
+.floating-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:5px 12px;background:#fff;border-top:1px solid #e2d7f3;z-index:2}
+.floating-footer button{min-height:34px;padding:5px 9px}.board-connection{font-size:12px;color:#50654a}.board-connection.offline{color:#a12b3a}
+.editor [data-testid="dropdown-menu-button"]{display:none}
+.editor .App-menu_top__left{padding-top:50px}
+@media(max-width:1050px){.editor{margin-top:62px}.editor .App-menu_top__left{padding-top:0}}
+@media(max-width:600px){.floating-header{top:6px;left:6px;right:6px}.floating-footer{padding:5px 8px}.floating-drawing-actions{justify-content:center}.editor .App-toolbar-container{flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px)}.board-connection{font-size:11px}}
+.editor .zoom-actions{display:none}
+.board-zoom{display:flex;align-items:center;gap:3px}
+.editor .excalidraw [data-testid="dropdown-menu-button"]{display:none!important}
+.figure-types{grid-template-columns:repeat(5,minmax(0,1fr))}
+@media(max-width:600px){
+ .editor .excalidraw .App-toolbar-container{flex-wrap:wrap!important}
+ .floating-drawing-actions{flex-basis:100%}
+}
+.mobile-drawing-actions{position:absolute;top:59px;left:0;right:0;z-index:14;display:flex;justify-content:center;pointer-events:none}
+@media(max-width:600px){.editor{margin-top:103px}}

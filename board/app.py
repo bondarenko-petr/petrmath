@@ -28,7 +28,7 @@ MAX_FRAME=1024*1024
 MESSAGES_PER_SECOND = 40
 MESSAGE_BURST = 120
 LOG=logging.getLogger('uvicorn.error')
-BUILD='lesson-menu-geometry-1'
+BUILD='lesson-floating-panels-1'
 
 
 def encode(value):return json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False)
@@ -351,7 +351,7 @@ def create_app(data_dir=None,origin=None,static_dir=None,trusted_proxy='127.0.0.
         async with room.lock:
             if len(room.peers)>=6:await socket.close(code=1013);return
             await socket.accept();peer=secrets.token_hex(8);room.peers[peer]=socket
-            await socket.send_text(encode({'type':'scene',**room.scene,'initial':True,'clientId':peer,'canEdit':user.get('can_edit',True) if isinstance(user,dict) else True,'lessonId':user.get('lesson_id') if isinstance(user,dict) else None,'canAttachPdf':user.get('can_attach_pdf',False) if isinstance(user,dict) else False,'usage':sheet_usage(room.scene,room.path/'scene.json'),'sheets':lesson_sheets(room_id)[1],'fileIds':[p.stem for p in (room.path/'files').glob('*.json')]}))
+            await socket.send_text(encode({'type':'scene',**room.scene,'initial':True,'clientId':peer,'canEdit':user.get('can_edit',True) if isinstance(user,dict) else True,'lessonId':user.get('lesson_id') if isinstance(user,dict) else None,'lessonStartsAt':user.get('lesson_starts_at') if isinstance(user,dict) else None,'lessonEndsAt':user.get('lesson_ends_at') if isinstance(user,dict) else None,'serverTime':time.time(),'canAttachPdf':user.get('can_attach_pdf',False) if isinstance(user,dict) else False,'usage':sheet_usage(room.scene,room.path/'scene.json'),'sheets':lesson_sheets(room_id)[1],'fileIds':[p.stem for p in (room.path/'files').glob('*.json')]}))
             await room.broadcast({'type':'presence','count':len(room.peers)})
         frames=deque();started=time.monotonic();received=0;largest=0;max_rate=0;slowest=0;close_code=None;close_reason='unknown'
         message_budget = MESSAGE_BURST

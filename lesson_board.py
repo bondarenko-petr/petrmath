@@ -53,6 +53,8 @@ def authorize_board(connection, room_id, write):
         raise HTTPException(410, 'Доска удалена. PDF доступен в материалах занятия')
     return access | {
         'lesson_id': lesson['id'],
+        'lesson_starts_at': lesson['starts_at'],
+        'lesson_ends_at': lesson['ends_at'],
         'can_edit': lesson_access(lesson, user, write=write),
         'can_attach_pdf': user['role'] == 'admin' and lesson['status'] == 'completed',
     }

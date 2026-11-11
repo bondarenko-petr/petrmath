@@ -9,7 +9,7 @@ import './style.css';
 import {ActionMenu} from './action-menu.jsx';
 import {GEOMETRY,geometryBounds} from './geometry.mjs';
 import {DEFAULT_GRID_RANGE, GridControls, gridDimensions, renderGridFile} from './coordinate-grid.jsx';
-const BUILD='lesson-menu-geometry-1';
+const BUILD='lesson-floating-panels-1';
 const DIAGNOSTICS_KEY = 'prosto5-board-connection-events';
 const DIAGNOSTICS_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 function recentDiagnostics(events) {
@@ -67,6 +67,24 @@ function GeometryIcon({objects}) {
   {objects.map((object,index)=>object.points?<polyline key={index} points={object.points.map(([x,y])=>[object.x+x,object.y+y].join(',')).join(' ')}/>:object.type==='ellipse'?<ellipse key={index} cx={object.x+object.width/2} cy={object.y+object.height/2} rx={object.width/2} ry={object.height/2}/>:object.type==='diamond'?<polygon key={index} points={`${object.x+object.width/2},${object.y} ${object.x+object.width},${object.y+object.height/2} ${object.x+object.width/2},${object.y+object.height} ${object.x},${object.y+object.height/2}`}/>:<rect key={index} x={object.x} y={object.y} width={object.width} height={object.height}/>)}
  </svg>;
 }
+function LessonTimer({schedule}) {
+ const [clock,setClock]=useState(()=>performance.now());
+ useEffect(()=>{
+  const tick=()=>setClock(performance.now());
+  tick();
+  const interval=setInterval(tick,250);
+  return ()=>clearInterval(interval);
+ },[schedule]);
+ const now=schedule.server+Math.max(0,clock-schedule.received)/1000;
+ const before=now<schedule.start;
+ const ended=now>=schedule.end;
+ const remaining=Math.max(0,Math.ceil((before?schedule.start:schedule.end)-now));
+ const display=String(Math.floor(remaining/60)).padStart(2,'0')+':'+String(remaining%60).padStart(2,'0');
+ return <div className={'lesson-timer'+(!before && !ended && remaining<=300?' timer-warning':'')}>
+  <span>{ended?'Время урока вышло':before?'До начала урока':'До конца урока'}</span>
+  {!ended && <strong role="timer">{display}</strong>}
+ </div>;
+}
 function App(){
  const [api,setApi]=useState(null),[ready,setReady]=useState(false),[connected,setConnected]=useState(false),[count,setCount]=useState(0),[status,setStatus]=useState('Подключаемся…'),[exporting,setExporting]=useState(false);
  const [sheets, setSheets] = useState(roomId ? [roomId] : []);
@@ -77,6 +95,19 @@ function App(){
  const [strokeWidth, setStrokeWidth] = useState(1);
  const [strokePanel, setStrokePanel] = useState(null);
  const editor = useRef(null);
+ const [smallScreen, setSmallScreen] = useState(()=>window.matchMedia('(max-width: 600px)').matches);
+ useEffect(()=>{
+  const query=window.matchMedia('(max-width: 600px)');
+  const update=()=>setSmallScreen(query.matches);
+  query.addEventListener('change',update);
+  return ()=>query.removeEventListener('change',update);
+ },[]);
+ const [toolbar, setToolbar] = useState(null);
+ const [lessonSchedule, setSchedule] = useState(null);
+ const [zoomPercent, setZoomPercent] = useState(100);
+ const [category, setCategory] = useState('Треугольники');
+ const [allFigures, setAllFigures] = useState(false);
+ const categories = [...new Set(GEOMETRY.map(spec => spec.category))];
  const gridFiles = useRef(new Map());
  const [selectedGrid, setSelectedGrid] = useState(null);
  useEffect(() => {
@@ -84,6 +115,7 @@ function App(){
   const container = editor.current;
   const findStrokePanel = () => {
    // Excalidraw has no custom control slot in the built-in style panel.
+   setToolbar(container.querySelector('.App-toolbar-container'));
    setStrokePanel(container.querySelector('[data-testid="strokeWidth-thin"]')?.closest('fieldset') ?? null);
   };
   const observer = new MutationObserver(findStrokePanel);
@@ -208,6 +240,7 @@ function App(){
   });
  }
  function changed(elements, appState){
+  setZoomPercent(Math.round(appState.zoom.value * 100));
   const selectedIds = Object.keys(appState.selectedElementIds).filter(id => appState.selectedElementIds[id]);
   const grid = selectedIds.length === 1 && elements.find(element =>
    element.id === selectedIds[0] && !element.isDeleted && element.type === 'image' &&
@@ -257,6 +290,9 @@ function App(){
    if(Number.isInteger(message.usage))setUsage(message.usage);
    if(message.initial){
     m.canEdit = message.canEdit !== false;
+    if ([message.lessonStartsAt, message.lessonEndsAt, message.serverTime].every(Number.isFinite)) {
+     setSchedule({start:message.lessonStartsAt,end:message.lessonEndsAt,server:message.serverTime,received:performance.now()});
+    }
     setAccess({canEdit:m.canEdit, canAttachPdf:!!message.canAttachPdf, lessonId:message.lessonId});
    }
    if(message.initial && Array.isArray(message.sheets))setSheets(message.sheets);
@@ -432,7 +468,64 @@ function App(){
  }
  async function newRoom(){try{const room=await request('/api/rooms',{method:'POST'});location.assign(boardBase + room.url)}catch(error){setStatus(error.message)}}
  if(!roomId)return <main className="welcome"><div className="brand">Просто <span>5</span></div><h1>Тестовая общая доска</h1><p>Рисунки, текст и картинки сохраняются на этом сервере. Создайте доску и отправьте её ссылку ученику.</p><button onClick={newRoom}>Создать доску для урока</button><p role="status">{status==='Подключаемся…'?'':status}</p><p className="muted">Пробный доступ по отдельному паролю. Сохраните ссылку, чтобы вернуться к этому уроку.</p><a href="https://prosto5.ru/">На сайт «Просто 5»</a></main>;
- return <><header className="board-header"><div className="board-heading"><a href="/" className="brand">Просто <span>5</span></a><div className="session"><strong>{access.lessonId?'Доска занятия':'Общая доска'}</strong><span role="status" className={!connected?'offline':''}>{status} · Участников: {count}</span></div></div><nav aria-label="Действия с доской" className="board-toolbar">
+ function changeZoom(delta) {
+  if (!api) return;
+  const {zoom, scrollX, scrollY, width, height} = api.getAppState();
+  const value = delta === 0 ? 1 : Math.min(10, Math.max(0.1, Math.round((zoom.value + delta) * 100) / 100));
+  const centerOffset = 1 / value - 1 / zoom.value;
+  api.updateScene({appState:{zoom:{value},scrollX:scrollX + width/2*centerOffset,scrollY:scrollY + height/2*centerOffset}});
+ }
+ const canDraw = access.canEdit && ready && connected && !switchingSheet && !clearingSheet;
+ const drawingActions = <div className="floating-drawing-actions">
+  <ActionMenu label="Фигуры" icon={<span aria-hidden="true">△</span>} compact disabled={!canDraw}>
+   <div className="figure-types">
+    {categories.map((name,index)=><button type="button" key={name} data-keep-menu title={name} aria-label={name}
+     aria-pressed={!allFigures && category===name} onClick={()=>{setCategory(name);setAllFigures(false);}}>
+      <span aria-hidden="true">{['△','□','○','∟','↗'][index]}</span>
+    </button>)}
+   </div>
+   <div className="figure-variants">
+    {GEOMETRY.filter(spec=>allFigures || spec.category===category).map(spec=><button type="button" key={spec.id}
+     title={spec.name} aria-label={spec.name} disabled={!canDraw} onClick={()=>insertGeometry(spec)}>
+     <GeometryIcon objects={spec.objects}/>
+    </button>)}
+   </div>
+   <button type="button" data-keep-menu aria-pressed={allFigures} onClick={()=>setAllFigures(value=>!value)}>Все фигуры</button>
+  </ActionMenu>
+  <button type="button" className="grid-tool" title="Координатная сетка" aria-label="Координатная сетка" disabled={!canDraw} onClick={insertGrid}>▦</button>
+ </div>;
+ return <>
+  <header className="floating-header">
+   <div className="board-island">
+    <a href="/" className="brand">Просто <span>5</span></a>
+    <ActionMenu label="Меню доски" icon={<span aria-hidden="true">☰</span>}>
+     <details className="board-save-section"><summary>{exporting?'Готовим PDF…':'Сохранить'}</summary>
+   <button disabled={!ready || exporting} onClick={()=>void pdf()}>Скачать PDF всех листов</button>
+   {access.canAttachPdf && <button disabled={!ready || exporting} onClick={()=>{
+    const m=model.current;if(m.dirty || m.pending.size || m.sending){setStatus('Дождитесь сохранения перед прикреплением PDF.');return;}void pdf(true);
+   }}>Прикрепить PDF к занятию</button>}
+   <div className="popover-section"><button disabled={!api} onClick={downloadSheetCopy}>Скачать копию текущего листа</button><p className="popover-hint">Редактируемый файл для восстановления записей.</p></div>
+     </details>
+     <button disabled={!canDraw} onClick={openLibrary}>Мои заготовки</button>
+     <button onClick={connectionReport}>Диагностика связи</button>
+     <button onClick={()=>editor.current?.querySelector('[data-testid="dropdown-menu-button"]')?.click()}>Настройки холста</button>
+     <div className="popover-section"><button className="danger-action" disabled={!canDraw} onClick={clearSheet}>Очистить текущий лист</button></div>
+    </ActionMenu>
+   </div>
+   {lessonSchedule && <LessonTimer schedule={lessonSchedule}/>}
+  </header>
+  {smallScreen ? <div className="mobile-drawing-actions">{drawingActions}</div> : toolbar && createPortal(drawingActions, toolbar)}
+  {strokePanel && createPortal(
+ <label className="stroke-width">
+  <span className="stroke-width-label">Точная настройка толщины штриха</span>
+  <input type="range" min="0.25" max="4" step="0.25"
+   value={strokeWidth} disabled={!access.canEdit || !ready || !connected} onChange={changeStrokeWidth} />
+  <svg width="42" height="20" viewBox="0 0 42 20" aria-hidden="true">
+   <line x1="9" y1="10" x2="33" y2="10" stroke="currentColor"
+    strokeWidth={strokeWidth * 4.25} strokeLinecap="round" />
+  </svg>
+ </label>, strokePanel)}<div className="editor" ref={editor}>{selectedGrid && <GridControls key={selectedGrid.id} range={selectedGrid} disabled={!access.canEdit || !connected} onChange={resizeGrid} />}<Excalidraw excalidrawAPI={setApi} onChange={changed} onPointerUpdate={pointer} isCollaborating={true} viewModeEnabled={!access.canEdit || !connected || switchingSheet || clearingSheet} langCode="ru-RU" initialData={{elements:[],appState:{isLoading:true,viewBackgroundColor:'#ffffff',currentItemRoughness:0}}} validateEmbeddable={()=>false}><MainMenu><MainMenu.DefaultItems.LoadScene/><MainMenu.DefaultItems.SaveAsImage/><MainMenu.DefaultItems.ClearCanvas/><MainMenu.Separator/><MainMenu.DefaultItems.ToggleTheme/><MainMenu.DefaultItems.ChangeCanvasBackground/></MainMenu></Excalidraw></div>
+  <footer className="floating-footer">
   <div className="sheet-tools">
    <label>Лист <select aria-label="Лист" value={roomId} disabled={!ready || switchingSheet} onChange={event=>void switchSheet(event.target.value)}>
     {sheets.map((id,index)=><option key={id} value={id}>{index+1} из {sheets.length}</option>)}
@@ -442,30 +535,13 @@ function App(){
    </div>
    <button disabled={!access.canEdit || !connected || switchingSheet} onClick={()=>void switchSheet()}>+ Лист</button>
   </div>
-  <div className="drawing-actions"><ActionMenu label="Фигуры" wide disabled={!access.canEdit || !ready || !connected}>
-   <div className="geometry-shortcuts"><button disabled={!access.canEdit || !ready || !connected} onClick={insertGrid}>Координатная сетка</button><button onClick={openLibrary}>Мои заготовки — библиотека</button><p className="popover-hint">Свои заготовки можно сохранить файлом библиотеки.</p></div>
-   <p className="popover-title">Готовые фигуры</p>
-   {[...new Set(GEOMETRY.map(spec=>spec.category))].map(category=><section className="geometry-category" key={category}><h3>{category}</h3><div className="geometry-choices">
-    {GEOMETRY.filter(spec=>spec.category===category).map(spec=><button key={spec.id} onClick={()=>insertGeometry(spec)}><GeometryIcon objects={spec.objects}/><span>{spec.name}</span></button>)}
-   </div></section>)}
-  </ActionMenu></div>
-  <div className="save-actions"><ActionMenu label={exporting?'Готовим PDF…':'Сохранить'} disabled={!ready || exporting}>
-   <button disabled={!ready || exporting} onClick={()=>void pdf()}>Скачать PDF всех листов</button>
-   {access.canAttachPdf && <button disabled={!ready || exporting} onClick={()=>{
-    const m=model.current;if(m.dirty || m.pending.size || m.sending){setStatus('Дождитесь сохранения перед прикреплением PDF.');return;}void pdf(true);
-   }}>Прикрепить PDF к занятию</button>}
-   <div className="popover-section"><button disabled={!api} onClick={downloadSheetCopy}>Скачать копию текущего листа</button><p className="popover-hint">Редактируемый файл для восстановления записей.</p></div>
-  </ActionMenu>
-  <ActionMenu label="Ещё"><button onClick={connectionReport}>Диагностика связи</button><div className="popover-section"><button className="danger-action" disabled={!access.canEdit || !connected || switchingSheet || clearingSheet} onClick={clearSheet}>Очистить текущий лист</button><p className="popover-hint">Удаляет записи и картинки только с выбранного листа. Потребуется подтверждение.</p></div></ActionMenu></div>
- </nav></header>{strokePanel && createPortal(
- <label className="stroke-width">
-  <span className="stroke-width-label">Точная настройка толщины штриха</span>
-  <input type="range" min="0.25" max="4" step="0.25"
-   value={strokeWidth} disabled={!access.canEdit || !ready || !connected} onChange={changeStrokeWidth} />
-  <svg width="42" height="20" viewBox="0 0 42 20" aria-hidden="true">
-   <line x1="9" y1="10" x2="33" y2="10" stroke="currentColor"
-    strokeWidth={strokeWidth * 4.25} strokeLinecap="round" />
-  </svg>
- </label>, strokePanel)}<div className="editor" ref={editor}>{selectedGrid && <GridControls key={selectedGrid.id} range={selectedGrid} disabled={!access.canEdit || !connected} onChange={resizeGrid} />}<Excalidraw excalidrawAPI={setApi} onChange={changed} onPointerUpdate={pointer} isCollaborating={true} viewModeEnabled={!access.canEdit || !connected || switchingSheet || clearingSheet} langCode="ru-RU" initialData={{elements:[],appState:{isLoading:true,viewBackgroundColor:'#ffffff',currentItemRoughness:0}}} validateEmbeddable={()=>false}><MainMenu><MainMenu.DefaultItems.LoadScene/><MainMenu.DefaultItems.SaveAsImage/><MainMenu.DefaultItems.ClearCanvas/><MainMenu.Separator/><MainMenu.DefaultItems.ToggleTheme/><MainMenu.DefaultItems.ChangeCanvasBackground/></MainMenu></Excalidraw></div></>;
+   <div className="board-zoom" aria-label="Масштаб доски">
+    <button type="button" aria-label="Уменьшить масштаб" disabled={!api} onClick={()=>changeZoom(-0.1)}>−</button>
+    <button type="button" aria-label="Сбросить масштаб" disabled={!api} onClick={()=>changeZoom(0)}>{zoomPercent}%</button>
+    <button type="button" aria-label="Увеличить масштаб" disabled={!api} onClick={()=>changeZoom(0.1)}>+</button>
+   </div>
+   <span className={'board-connection '+(!connected?'offline':'')} role="status">{status} · Участников: {count}</span>
+  </footer>
+ </>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
