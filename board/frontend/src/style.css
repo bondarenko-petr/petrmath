@@ -179,3 +179,12 @@ button:hover,.board-action-menu>summary:hover{background:#f1e8ff}button:disabled
 .pdf-import-footer>span{flex:1;min-width:120px;font-size:13px}
 .pdf-import-footer .pdf-import-confirm{background:#7015ef;color:white}
 .pdf-import-loading{position:fixed;z-index:30;top:64px;left:50%;transform:translateX(-50%);padding:10px;background:#fff}
+
+.board-lesson-tools{display:flex;align-items:flex-start;gap:8px}
+.board-call-control{position:relative}
+.lesson-call{position:absolute;right:0;top:calc(100% + 8px);width:min(340px,calc(100vw - 24px));max-height:65dvh;overflow:auto;padding:12px;background:#fff;border:1px solid #e2d7f3;border-radius:12px;box-shadow:0 3px 12px #30234026}
+.lesson-call p{margin:0 0 8px}
+.lesson-call-media{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}
+.lesson-call-media video{width:100%;aspect-ratio:4/3;object-fit:contain;background:#211832;border-radius:6px}
+.lesson-call-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+@media(max-width:600px){.board-lesson-tools{position:relative}.board-call-control{position:static}}

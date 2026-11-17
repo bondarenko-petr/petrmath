@@ -87,6 +87,43 @@ function LessonTimer({schedule}) {
   {!ended && <strong role="timer">{display}</strong>}
  </div>;
 }
+const LessonCall = React.lazy(() => import('./lesson-call.jsx'));
+
+function BoardCall({lessonId}) {
+ const [enabled, setEnabled] = useState(false);
+ const [open, setOpen] = useState(false);
+ useEffect(() => {
+  const controller = new AbortController();
+  async function refresh() {
+   try {
+    const response = await fetch('/api/lessons/' + lessonId + '/call', {
+     cache: 'no-store', signal: controller.signal,
+    });
+    if (!response.ok && ![401, 403, 404].includes(response.status)) return;
+    const active = response.ok && (await response.json()).enabled;
+    if (controller.signal.aborted) return;
+    setEnabled(Boolean(active));
+    if (!active) setOpen(false);
+   } catch { /* Existing calls can recover from temporary network failures. */ }
+  }
+  void refresh();
+  const timer = setInterval(refresh, 10000);
+  window.addEventListener('focus', refresh);
+  return () => {
+   controller.abort();
+   clearInterval(timer);
+   window.removeEventListener('focus', refresh);
+  };
+ }, [lessonId]);
+ if (!enabled) return null;
+ return <div className="board-call-control">
+  <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>Видеосвязь</button>
+  {open && <Suspense fallback={<p role="status">Загружаем видеосвязь…</p>}>
+   <LessonCall lessonId={lessonId} onClose={() => setOpen(false)}/>
+  </Suspense>}
+ </div>;
+}
+
 function App(){
  const [api,setApi]=useState(null),[ready,setReady]=useState(false),[connected,setConnected]=useState(false),[count,setCount]=useState(0),[status,setStatus]=useState('Подключаемся…'),[exporting,setExporting]=useState(false);
  const [sheets, setSheets] = useState(roomId ? [roomId] : []);
@@ -569,7 +606,10 @@ function App(){
      <div className="popover-section"><button className="danger-action" disabled={!canDraw} onClick={clearSheet}>Очистить текущий лист</button></div>
     </ActionMenu>
    </div>
-   {lessonSchedule && <LessonTimer schedule={lessonSchedule}/>}
+   <div className="board-lesson-tools">
+    {access.lessonId && <BoardCall key={access.lessonId} lessonId={access.lessonId}/>}
+    {lessonSchedule && <LessonTimer schedule={lessonSchedule}/>}
+   </div>
   </header>
   <input ref={pdfInput} type="file" accept="application/pdf,.pdf" hidden onChange={event=>{
    choosePdf(event.currentTarget.files?.[0]);

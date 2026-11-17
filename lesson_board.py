@@ -146,6 +146,8 @@ async def board_pdf(lesson_id: int, request: Request, user=Depends(require_admin
 
 
 def mount_board(app):
+    from lesson_call import router as call_router
+    app.include_router(call_router)
     app.include_router(router)
     if board_enabled():
         origin = os.environ.get('LESSON_BOARD_ORIGIN', 'https://prosto5.ru')
