@@ -117,7 +117,7 @@ function BoardCall({lessonId}) {
  }, [lessonId]);
  if (!enabled) return null;
  return <div className="board-call-control">
-  <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>Видеосвязь</button>
+  <button type="button" aria-expanded={open} onClick={() => setOpen(true)}>Видеосвязь</button>
   {open && <Suspense fallback={<p role="status">Загружаем видеосвязь…</p>}>
    <LessonCall lessonId={lessonId} onClose={() => setOpen(false)}/>
   </Suspense>}
