@@ -40,7 +40,7 @@ def students(response: Response, limit: int = Query(50, ge=1, le=100), offset: i
         joins = " FROM users u LEFT JOIN student_profiles s ON s.user_id=u.id"
         if financial:
             fields += ",CAST(COALESCE(paid.total,0) AS SIGNED)-CAST(COALESCE(spent.total,0) AS SIGNED) AS balance_kopecks"
-            joins += " LEFT JOIN (SELECT student_id,SUM(amount_kopecks) AS total FROM payments WHERE voided_at IS NULL GROUP BY student_id) paid ON paid.student_id=u.id LEFT JOIN (SELECT student_id,SUM(price_kopecks) AS total FROM lessons WHERE status='completed' GROUP BY student_id) spent ON spent.student_id=u.id"
+            joins += " LEFT JOIN (SELECT student_id,SUM(amount_kopecks) AS total FROM payments WHERE voided_at IS NULL GROUP BY student_id) paid ON paid.student_id=u.id LEFT JOIN (SELECT student_id,SUM(price_kopecks) AS total FROM lessons WHERE status IN ('completed','no_show_paid') GROUP BY student_id) spent ON spent.student_id=u.id"
         source = " FROM (SELECT " + fields + joins + " WHERE u.role='student') student_list"
         clauses=['1=1'];args=[]
         if view=='active': clauses.append('is_active=1')

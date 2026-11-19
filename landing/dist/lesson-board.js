@@ -1,7 +1,7 @@
 (() => {
  const settings = fetch('/api/lessons/board-settings', {cache:'no-store'}).then(r => r.ok ? r.json() : null).catch(() => null);
  window.addLessonBoardAction = (parent, lesson, timezone) => {
-  if (!parent || !lesson || lesson.status === 'cancelled' || (lesson.status === 'completed' && !lesson.board_created)) return;
+  if (!parent || !lesson || ['cancelled','no_show_paid','no_show_free'].includes(lesson.status) || (lesson.status === 'completed' && !lesson.board_created)) return;
   const slot = document.createElement('div'); slot.className = 'lesson-actions'; parent.append(slot);
   void settings.then(async config => {
    if (!config?.enabled || !slot.isConnected) return;

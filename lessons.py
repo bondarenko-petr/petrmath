@@ -81,7 +81,7 @@ class LessonEdit(LessonInput):
 
 
 class StatusInput(BaseModel):
-    status: Literal['scheduled', 'completed', 'cancelled']
+    status: Literal['scheduled', 'completed', 'cancelled', 'no_show_paid', 'no_show_free']
     scope: Literal['one', 'following', 'series'] = 'one'
 
 
@@ -282,13 +282,13 @@ def status(lesson_id: int, data: StatusInput, request: Request, user=Depends(req
         lock_schedule(c, p, user['id'])
         row = get_lesson(c, p, lesson_id)
         rows = selected(c, p, row, data.scope)
-        if data.scope != 'one' and data.status == 'completed':
+        if data.scope != 'one' and data.status in ('completed', 'no_show_paid', 'no_show_free'):
             raise HTTPException(422, 'Отмечайте проведённым каждый урок отдельно')
         rows = [r for r in rows if data.scope == 'one' or (r['status'] != 'completed' and r['starts_at'] > int(time.time()))]
         for r in rows:
-            if data.status == 'completed' and r['ends_at'] > int(time.time()):
+            if data.status in ('completed', 'no_show_paid', 'no_show_free') and r['ends_at'] > int(time.time()):
                 raise HTTPException(422, 'Занятие ещё не закончилось')
-            if r['status'] == 'completed' and data.status != 'completed':
+            if r['status'] == 'completed' and data.status not in ('completed', 'no_show_paid', 'no_show_free'):
                 raise HTTPException(409, 'История проведённых занятий сохраняется')
         if data.status == 'scheduled':
             if any(r['starts_at'] < int(time.time()) for r in rows):

@@ -28,7 +28,7 @@ def board_data():
 def lesson_access(lesson, user, *, write=False):
     if user['role'] == 'student' and lesson['student_id'] != user['id']:
         raise HTTPException(404, 'Доска занятия не найдена')
-    if lesson['status'] == 'cancelled':
+    if lesson['status'] in ('cancelled', 'no_show_paid', 'no_show_free'):
         raise HTTPException(404, 'Занятие отменено')
     if lesson['status'] == 'scheduled' and time.time() < lesson['starts_at'] - OPEN_BEFORE_SECONDS:
         raise HTTPException(403, 'Доска доступна за 30 минут до начала занятия')

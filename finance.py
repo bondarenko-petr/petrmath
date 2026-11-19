@@ -49,7 +49,7 @@ def balance(cursor, p, student_id):
         WHERE student_id={p} AND voided_at IS NULL''', (student_id,))
     paid = dict(cursor.fetchone())
     cursor.execute(f'''SELECT COUNT(*) AS completed_lessons, COALESCE(SUM(price_kopecks),0) AS spent_kopecks
-        FROM lessons WHERE student_id={p} AND status='completed' ''', (student_id,))
+        FROM lessons WHERE student_id={p} AND status IN ('completed','no_show_paid') ''', (student_id,))
     spent = dict(cursor.fetchone())
     # Only money is authoritative. Package quantities are historical metadata,
     # not a second entitlement or a guarantee when lesson prices differ.
@@ -74,15 +74,15 @@ def get_balance(response: Response, student_id: int | None = Query(None, gt=0),
             c.execute('BEGIN')
         result = balance(c,p,owner_id)
         c.execute(f'''SELECT (SELECT COUNT(*) FROM payments WHERE student_id={p}) +
-            (SELECT COUNT(*) FROM lessons WHERE student_id={p} AND status='completed') AS total''', (owner_id,owner_id))
+            (SELECT COUNT(*) FROM lessons WHERE student_id={p} AND status IN ('completed','no_show_paid')) AS total''', (owner_id,owner_id))
         total = int(c.fetchone()['total'])
         c.execute(f'''SELECT * FROM (
             SELECT id,'payment' AS kind,created_at AS occurred_at,amount_kopecks,lesson_count,
                 note,voided_at,void_reason FROM payments WHERE student_id={p}
             UNION ALL
             SELECT id,'lesson' AS kind,ends_at AS occurred_at,-CAST(price_kopecks AS SIGNED) AS amount_kopecks,
-                -1 AS lesson_count,topic AS note,NULL AS voided_at,'' AS void_reason
-                FROM lessons WHERE student_id={p} AND status='completed'
+                -1 AS lesson_count,CASE WHEN status='no_show_paid' THEN 'Неявка ученика · со списанием' ELSE topic END AS note,NULL AS voided_at,'' AS void_reason
+                FROM lessons WHERE student_id={p} AND status IN ('completed','no_show_paid')
             ) AS ledger ORDER BY occurred_at DESC,kind,id DESC LIMIT {p} OFFSET {p}''', (owner_id,owner_id,limit,offset))
         history = [dict(row) for row in c.fetchall()]
     response.headers['Cache-Control']='no-store'
@@ -153,7 +153,7 @@ def financial_report(response:Response,from_date:date|None=None,to_date:date|Non
           LEFT JOIN (SELECT student_id,SUM(price_kopecks) AS spent,
              SUM(CASE WHEN ends_at>={p} AND ends_at<{p} THEN price_kopecks ELSE 0 END) AS earned,
              SUM(CASE WHEN ends_at>={p} AND ends_at<{p} THEN 1 ELSE 0 END) AS completed
-             FROM lessons WHERE status='completed' GROUP BY student_id) sp ON sp.student_id=u.id
+             FROM lessons WHERE status IN ('completed','no_show_paid') GROUP BY student_id) sp ON sp.student_id=u.id
           WHERE u.role='student') report'''
         args=[start,end,start,end,start,end]
         c.execute('SELECT COALESCE(SUM(received_kopecks),0) AS received_kopecks,COALESCE(SUM(earned_kopecks),0) AS earned_kopecks,COALESCE(SUM(completed_lessons),0) AS completed_lessons,COALESCE(SUM(CASE WHEN balance_kopecks<0 THEN -balance_kopecks ELSE 0 END),0) AS debt_kopecks,COALESCE(SUM(CASE WHEN balance_kopecks<0 THEN 1 ELSE 0 END),0) AS debtors_count'+source,tuple(args))

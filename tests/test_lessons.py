@@ -188,3 +188,19 @@ class LessonTests(unittest.TestCase):
         forbidden=self.client.patch('/api/lessons/'+str(lesson_id)+'/status',json={'status':'cancelled'},headers=self.headers)
         self.assertEqual(forbidden.status_code,403)
         self.assertTrue(any(row['id']==lesson_id and row['status']=='cancelled' for row in self.client.get('/api/lessons').json()['items']))
+
+
+    def test_no_show_billing_and_repeated_status(self):
+        from finance import balance
+        lesson_id = self.create().json()['ids'][0]
+        path = '/api/lessons/' + str(lesson_id) + '/status'
+        self.assertEqual(self.client.patch(path, json={'status':'no_show_paid'}, headers=self.headers).status_code, 422)
+        with database() as (c, p):
+            c.execute('UPDATE lessons SET starts_at=?,ends_at=? WHERE id=?',
+                      (int(time.time())-7200,int(time.time())-3600,lesson_id))
+        for status, expected in [('no_show_paid',-123456),('no_show_paid',-123456),
+                                 ('no_show_free',0),('completed',-123456),('no_show_free',0)]:
+            response = self.client.patch(path,json={'status':status},headers=self.headers)
+            self.assertEqual(response.status_code,200,response.text)
+            with database() as (c,p):
+                self.assertEqual(balance(c,p,self.id)['balance_kopecks'],expected)

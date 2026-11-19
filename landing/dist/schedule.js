@@ -4,7 +4,7 @@ const $=s=>host.querySelector(s), form=$('#lesson-form'), filters=$('#filters');
 let listGeneration=0,showFullDay=false,studentRangeMode='auto';
 try{if(localStorage.getItem('krug-pi-student-calendar-range')==='fixed')studentRangeMode='fixed'}catch{}
 let config, students=[],editing=null,offset=0,weekStart,busy=false,calendarGeneration=0,calendarCleanup=null,calendarDuration=null,secondaryZone='Europe/Berlin';
-const states={scheduled:'Запланировано',completed:'Проведено',cancelled:'Отменено'};
+const states={scheduled:'Запланировано',completed:'Проведено',cancelled:'Отменено',no_show_paid:'Неявка · со списанием',no_show_free:'Неявка · без списания'};
 function plus(date,n){const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
 function localInput(value){const parts=new Intl.DateTimeFormat('sv-SE',{timeZone:config.timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value));return parts.replace(' ','T')}
 function text(tag,value){const e=document.createElement(tag);e.textContent=value;return e}
@@ -43,7 +43,7 @@ function addCallControl(card, row) {
   }
  };
 }
-function card(row,actions=true){const e=text('article','');e.className='lesson-card '+row.status;e.append(text('strong',new Date(row.starts_at).toLocaleString('ru-RU',{timeZone:config.timezone,dateStyle:'short',timeStyle:'short'})));if(config.role==='admin'){e.append(text('h3',row.student_name));if(row.student_timezone)e.append(text('p','У ученика ('+row.student_timezone+'): '+new Date(row.starts_at).toLocaleString('ru-RU',{timeZone:row.student_timezone,dateStyle:'short',timeStyle:'short'})));}if(row.series_id)e.append(text('p','Постоянное время серии: '+row.timezone));if(row.status==='completed'){const materialLink=text('a','Задание и конспект');materialLink.href='materials.html?lesson_id='+row.id+'&student_id='+row.student_id;e.append(materialLink)}e.append(text('p',states[row.status]+' · '+row.duration_minutes+' мин · '+money(row.price_kopecks)));if(row.topic)e.append(text('p',row.topic));if(row.series_id)e.append(text('small','Повторяющееся занятие'));if(row.meeting_url&&row.status==='scheduled'){const a=text('a','Открыть онлайн-урок →');a.href=row.meeting_url;a.target='_blank';a.rel='noopener noreferrer';e.append(text('p',''),a)}window.addLessonBoardAction?.(e,row,config.timezone);if(config.role==='admin'&&actions&&row.status!=='completed'){const controls=text('div','');controls.className='lesson-actions';for(const [label,handler] of [['Изменить',()=>openEditor(row)],[row.status==='cancelled'?'Восстановить урок':'Отменить урок',()=>changeStatus(row,row.status==='cancelled'?'scheduled':'cancelled')],['Проведено',()=>changeStatus(row,'completed')],['Удалить',()=>remove(row)]]){const b=text('button',label);b.type='button';b.onclick=handler;controls.append(b)}e.append(controls)}return e}
+function card(row,actions=true){const e=text('article','');e.className='lesson-card '+row.status;e.append(text('strong',new Date(row.starts_at).toLocaleString('ru-RU',{timeZone:config.timezone,dateStyle:'short',timeStyle:'short'})));if(config.role==='admin'){e.append(text('h3',row.student_name));if(row.student_timezone)e.append(text('p','У ученика ('+row.student_timezone+'): '+new Date(row.starts_at).toLocaleString('ru-RU',{timeZone:row.student_timezone,dateStyle:'short',timeStyle:'short'})));}if(row.series_id)e.append(text('p','Постоянное время серии: '+row.timezone));if(row.status==='completed'){const materialLink=text('a','Задание и конспект');materialLink.href='materials.html?lesson_id='+row.id+'&student_id='+row.student_id;e.append(materialLink)}e.append(text('p',states[row.status]+' · '+row.duration_minutes+' мин · '+money(row.price_kopecks)));if(row.topic)e.append(text('p',row.topic));if(row.series_id)e.append(text('small','Повторяющееся занятие'));if(row.meeting_url&&row.status==='scheduled'){const a=text('a','Открыть онлайн-урок →');a.href=row.meeting_url;a.target='_blank';a.rel='noopener noreferrer';e.append(text('p',''),a)}window.addLessonBoardAction?.(e,row,config.timezone);if(config.role==='admin'&&actions&&row.status==='completed'){const b=text('button','Неявка ученика');b.type='button';b.onclick=()=>openNoShow(row);e.append(b)}if(config.role==='admin'&&actions&&row.status!=='completed'){const controls=text('div','');controls.className='lesson-actions';for(const [label,handler] of [['Изменить',()=>openEditor(row)],[row.status==='cancelled'?'Восстановить урок':'Отменить урок',()=>changeStatus(row,row.status==='cancelled'?'scheduled':'cancelled')],['Проведено',()=>changeStatus(row,'completed')],['Неявка ученика',()=>openNoShow(row)],['Удалить',()=>remove(row)]]){const b=text('button',label);b.type='button';b.onclick=handler;controls.append(b)}e.append(controls)}return e}
 let studentListGeneration=0;
 async function loadActiveStudents(){
  const generation=++studentListGeneration;
@@ -91,6 +91,35 @@ function openCancellation(row){
  let saving=false;dialog.addEventListener('cancel',event=>{if(saving)event.preventDefault()});dialog.addEventListener('close',()=>dialog.remove());
  cancelForm.onsubmit=async event=>{event.preventDefault();if(saving||busy)return;saving=true;busy=true;submit.disabled=back.disabled=select.disabled=true;feedback.textContent='Отменяем…';try{const result=await api('/'+row.id+'/status','PATCH',{status:'cancelled',scope:select.value});dialog.close();$('#status').textContent='Отменено занятий: '+result.updated+'. Баланс не списывается.';try{await refresh()}catch{$('#status').textContent='Отмена сохранена. Нажмите «Обновить», чтобы увидеть изменения.'}}catch(e){feedback.textContent=e.message}finally{saving=false;busy=false;submit.disabled=back.disabled=select.disabled=false}};
  dialog.showModal();back.focus();
+}
+function openNoShow(row){
+ if(busy)return;
+ const dialog=text('dialog','');dialog.className='lesson-cancel-dialog';
+ const title=text('h2','Неявка ученика');
+ const summary=text('p',row.student_name+' · '+new Date(row.starts_at).toLocaleString('ru-RU',{timeZone:config.timezone,dateStyle:'short',timeStyle:'short'}));
+ const form=text('form',''),label=text('label','Оплата занятия'),select=text('select','');
+ for(const [value,name] of [['no_show_free','Без списания'],['no_show_paid','Списать '+money(row.price_kopecks)]]){
+  const option=text('option',name);option.value=value;select.append(option);
+ }
+ select.value=row.status==='no_show_paid'?'no_show_paid':'no_show_free';
+ label.append(select);
+ const feedback=text('p','');feedback.setAttribute('role','status');
+ const submit=text('button','Подтвердить'),cancel=text('button','Отмена');
+ submit.type='submit';cancel.type='button';cancel.onclick=()=>dialog.close();
+ form.append(label,feedback,submit,cancel);dialog.append(title,summary,form);document.body.append(dialog);
+ dialog.addEventListener('close',()=>dialog.remove());
+ let saving=false;
+ dialog.addEventListener('cancel',event=>{if(saving)event.preventDefault()});
+ form.onsubmit=async event=>{
+  event.preventDefault();if(saving||busy)return;
+  saving=true;busy=true;submit.disabled=cancel.disabled=select.disabled=true;
+  try{
+   await api('/'+row.id+'/status','PATCH',{status:select.value,scope:'one'});
+   dialog.close();await refresh();
+  }catch(error){feedback.textContent=error.message}
+  finally{saving=false;busy=false;submit.disabled=cancel.disabled=select.disabled=false}
+ };
+ dialog.showModal();
 }
 async function remove(row){const scope=scopeFor(row);if(!scope||!confirm('Удалить выбранные будущие занятия? Для сохранения истории используйте отмену.'))return;await mutate(()=>api('/'+row.id+'?scope='+scope,'DELETE'))}
 function updateEditorTimeHint(){if(!config)return;$('#editor-zone').textContent='Дата и время формы: '+config.timezone;const value=form.elements.starts_at.value,duration=Number(form.elements.duration_minutes.value);if(!value){$('#secondary-preview').textContent='';return}const [day,time]=value.split('T'),[hour,minute]=time.split(':').map(Number),times=WeeklyCalendar.instants(day,hour*60+minute,config.timezone);if(times.length!==1){$('#secondary-preview').textContent='Это местное время отсутствует или неоднозначно из-за перевода часов.';return}const student=students.find(s=>s.id===Number(form.elements.student_id.value)),studentZone=student?.timezone||config.student_default_timezone||config.timezone;const lines=[];for(const [name,tz] of [['У ученика',studentZone],['Второй пояс',secondaryZone]]){if(!tz)continue;const label=new Intl.DateTimeFormat('ru-RU',{timeZone:tz,dateStyle:'short',timeStyle:'short'});lines.push(name+' ('+tz+'): '+label.format(times[0])+(Number.isFinite(duration)&&duration>0?' — '+label.format(times[0]+duration*60000):''))}$('#secondary-preview').textContent=lines.join(' · ');const seriesZone=form.elements.recurrence_timezone.value==='student'?studentZone:config.timezone;$('#recurrence-zone-hint').textContent='Дни недели и конец серии: '+seriesZone+'. Первое занятие в этом поясе: '+new Intl.DateTimeFormat('ru-RU',{timeZone:seriesZone,dateStyle:'full',timeStyle:'short'}).format(times[0]);}
