@@ -1,4 +1,5 @@
 import './bootstrap.js';
+import {usePhoneLayout, PhoneTools, PhoneFullscreen} from './phone-tools.jsx';
 import {createLessonPdf} from './lesson-pdf.js';
 import React,{lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
@@ -125,6 +126,8 @@ function BoardCall({lessonId}) {
 }
 
 function App(){
+ const phone = usePhoneLayout();
+ const [activeTool, setActiveTool] = useState('selection');
  const [api,setApi]=useState(null),[ready,setReady]=useState(false),[connected,setConnected]=useState(false),[count,setCount]=useState(0),[status,setStatus]=useState('Подключаемся…'),[exporting,setExporting]=useState(false);
  const [sheets, setSheets] = useState(roomId ? [roomId] : []);
  const [usage, setUsage] = useState(0);
@@ -282,6 +285,7 @@ function App(){
   });
  }
  function changed(elements, appState){
+  setActiveTool(previous => previous === appState.activeTool.type ? previous : appState.activeTool.type);
   setZoomPercent(Math.round(appState.zoom.value * 100));
   const selectedIds = Object.keys(appState.selectedElementIds).filter(id => appState.selectedElementIds[id]);
   const grid = selectedIds.length === 1 && elements.find(element =>
@@ -602,6 +606,8 @@ function App(){
      <button disabled={!canDraw} onClick={()=>pdfInput.current?.click()}>Импорт PDF</button>
      <button disabled={!canDraw} onClick={openLibrary}>Мои заготовки</button>
      <button onClick={connectionReport}>Диагностика связи</button>
+     {phone && <PhoneFullscreen/>}
+     {phone && <button onClick={() => api?.updateScene({appState:{activeTool:{...api.getAppState().activeTool,locked:!api.getAppState().activeTool.locked}}})}>Закрепить инструмент</button>}
      <button onClick={()=>requestAnimationFrame(()=>editor.current?.querySelector('.dropdown-menu-button')?.click())}>Настройки холста</button>
      <div className="popover-section"><button className="danger-action" disabled={!canDraw} onClick={clearSheet}>Очистить текущий лист</button></div>
     </ActionMenu>
@@ -618,7 +624,10 @@ function App(){
   {pdfFile && <Suspense fallback={<div className="pdf-import-loading" role="status">Загружаем импорт PDF…</div>}>
    <PdfImport file={pdfFile} freeSheets={Math.max(0,30-sheets.length)} onClose={()=>setPdfFile(null)} onImport={importPdf}/>
   </Suspense>}
-  {toolbar && createPortal(drawingActions, toolbar)}
+  {!phone && toolbar && createPortal(drawingActions, toolbar)}
+  {phone && <PhoneTools api={api} active={activeTool} disabled={!canDraw} insertGrid={insertGrid}
+   insertTriangle={() => insertGeometry(GEOMETRY.find(spec => spec.id === 'triangle'))}
+   geometry={GEOMETRY} insertGeometry={insertGeometry}/>}
   {strokePanel && createPortal(
  <label className="stroke-width">
   <span className="stroke-width-label">Точная настройка толщины штриха</span>
@@ -647,7 +656,7 @@ function App(){
     <button type="button" aria-label="Сбросить масштаб" disabled={!api} onClick={()=>changeZoom(0)}>{zoomPercent}%</button>
     <button type="button" aria-label="Увеличить масштаб" disabled={!api} onClick={()=>changeZoom(0.1)}>+</button>
    </div>
-   <span className={'board-connection '+(!connected?'offline':'')} role="status">{status} · Участников: {count}</span>
+   <span className={'board-connection '+(!connected?'offline':'')} title={status+' · Участников: '+count} role="status">{phone && connected && status==='Сохранено на сервере' ? '●' : status+' · Участников: '+count}</span>
   </footer>
  </>;
 }

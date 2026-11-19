@@ -203,3 +203,34 @@ button:hover,.board-action-menu>summary:hover{background:#f1e8ff}button:disabled
 .lesson-call .lesson-call-icon:disabled{opacity:.35}
 .lesson-call .lesson-call-leave{color:#bd263c}
 .lesson-call .lesson-call-audio{width:100%;padding:4px;font-size:11px}
+
+.phone-tools{display:none}
+.phone-board .editor .App-toolbar-container,.phone-board .editor .HintViewer{display:none!important}
+.phone-board .editor{margin-top:124px}
+.phone-board .phone-tools{position:absolute;top:70px;left:8px;right:8px;z-index:16;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:2px;padding:4px;background:#fff;border:1px solid #e2d7f3;border-radius:12px;box-shadow:0 3px 12px #30234012}
+.phone-tools button{position:relative;display:grid;place-items:center;min-width:0;min-height:44px;padding:4px;border:0;background:white;color:#321653;border-radius:8px;touch-action:manipulation}
+.phone-tools button[aria-pressed=true]{background:#e9dfff}
+.phone-tools svg{width:23px;height:23px}
+.phone-chevron{position:absolute;right:2px;bottom:4px;font-size:12px}
+.phone-sheet{position:fixed;inset:auto 0 0;margin:0;width:100%;max-width:100%;box-sizing:border-box;max-height:65dvh;overflow:auto;border:1px solid #e2d7f3;border-radius:18px 18px 0 0;padding:14px 12px max(14px,env(safe-area-inset-bottom));color:#321653;background:#fff}
+.phone-sheet::backdrop{background:#21183225}
+.phone-sheet-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.phone-sheet-heading h2{font-size:18px;margin:0}
+.phone-sheet-heading button{width:44px;min-height:44px;font-size:25px;padding:0}
+.phone-shape-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.phone-shape-choices button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-width:0;min-height:88px;padding:8px 3px;font-size:11px;overflow-wrap:anywhere;touch-action:manipulation}
+.phone-shape-choices svg{width:30px;height:30px;flex-shrink:0}
+.phone-board .editor .undo-redo-buttons{width:auto;flex:none;box-shadow:none}
+.phone-board .editor .App-menu_bottom > .Island:has(.undo-redo-buttons){width:auto;flex:none;box-shadow:none}
+.phone-board .floating-footer{display:grid;grid-template-columns:auto 1fr;gap:5px;padding:5px 8px max(5px,env(safe-area-inset-bottom))}
+.phone-board .sheet-tools{grid-column:1/-1;width:auto;display:flex;gap:8px;align-items:center}
+.phone-board .board-connection{justify-self:end;font-size:11px;max-width:100%;overflow-wrap:anywhere}
+.phone-board .board-zoom{justify-self:start}
+.phone-board .board-zoom button{min-height:40px}
+.phone-board .board-action-menu .phone-fullscreen button{width:100%;text-align:left}
+.phone-board .board-island .brand{font-size:15px}
+.phone-board .board-lesson-tools{gap:3px}
+@media (orientation:landscape){
+ .phone-board .editor{margin-top:110px}
+ .phone-board .phone-tools{top:58px;left:50%;right:auto;width:min(420px,calc(100% - 16px));transform:translateX(-50%)}
+}
