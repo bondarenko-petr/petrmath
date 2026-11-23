@@ -30,6 +30,15 @@ function patchEraser(code, production) {
  return code;
 }
 
+function patchPhonePressure(code, production) {
+ const before = production ? 't.pressure===.5' : 'event.pressure === 0.5';
+ if (code.indexOf(before) < 0 || code.indexOf(before) !== code.lastIndexOf(before)) {
+  throw new Error('Excalidraw pressure implementation changed. Review the phone pen patch.');
+ }
+ return code.replace(before,
+  '(document.documentElement.hasAttribute("data-board-simulate-pressure")||' + before + ')');
+}
+
 export default defineConfig({
  build: {rollupOptions: {input: {main: 'index.html', export: 'export.html'}}},
  optimizeDeps: {exclude: ['@excalidraw/excalidraw']},
@@ -38,7 +47,7 @@ export default defineConfig({
   enforce: 'pre',
   transform(code, id) {
    const match = id.match(/\/@excalidraw\/excalidraw\/dist\/(prod|dev)\/index\.js$/);
-   if (match) return {code: patchEraser(code, match[1] === 'prod'), map: null};
+   if (match) return {code: patchPhonePressure(patchEraser(code, match[1] === 'prod'), match[1] === 'prod'), map: null};
   },
  }],
 });

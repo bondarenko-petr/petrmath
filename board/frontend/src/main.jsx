@@ -174,6 +174,12 @@ function App(){
  const [sheets, setSheets] = useState(roomId ? [roomId] : []);
  const [usage, setUsage] = useState(0);
  const [access, setAccess] = useState({canEdit: false, canAttachPdf: false});
+ useEffect(() => {
+  const enabled = phone && followTeacher && access.role === 'student';
+  document.documentElement.toggleAttribute('data-board-simulate-pressure', enabled);
+  return () => document.documentElement.removeAttribute('data-board-simulate-pressure');
+ }, [phone, followTeacher, access.role]);
+
  const [clearingSheet, setClearingSheet] = useState(false);
  const [switchingSheet, setSwitchingSheet] = useState(false);
  const [strokeWidth, setStrokeWidth] = useState(1);
