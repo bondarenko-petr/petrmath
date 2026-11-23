@@ -40,7 +40,7 @@ def lesson_access(lesson, user, *, write=False):
 
 def authorize_board(connection, room_id, write):
     user = member(connection, Response())
-    access = {'label': user['name'], 'rate_key': user['id']}
+    access = {'label': user['name'], 'rate_key': user['id'], 'role': user['role']}
     if room_id is None:
         return access
     with database() as (cursor, placeholder):

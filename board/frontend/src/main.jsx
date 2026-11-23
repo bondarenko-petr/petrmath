@@ -127,6 +127,48 @@ function BoardCall({lessonId}) {
 
 function App(){
  const phone = usePhoneLayout();
+ const [teacherWidth, setTeacherWidth] = useState(1);
+ const [followTeacher, setFollowTeacher] = useState(() => {
+  try { return sessionStorage.getItem('pen-mode-' + roomId) !== 'own'; } catch { return true; }
+ });
+ const penSync = useRef({drawing:false, role:null, width:1, following:true, phone:false, published:null});
+ penSync.current.following = followTeacher;
+ penSync.current.phone = phone;
+ function applyTeacherPen() {
+  const state = penSync.current;
+  const currentApi = model.current.api;
+  if (!currentApi || state.drawing || state.role !== 'student' || !state.following || !state.phone) return;
+  if (currentApi.getAppState().currentItemStrokeWidth !== state.width) {
+   currentApi.updateScene({appState:{currentItemStrokeWidth:state.width},captureUpdate:CaptureUpdateAction.NEVER});
+  }
+ }
+ function choosePenMode(follow) {
+  penSync.current.following = follow;
+  setFollowTeacher(follow);
+  try { sessionStorage.setItem('pen-mode-' + roomId, follow ? 'teacher' : 'own'); } catch {}
+  if (follow) applyTeacherPen();
+ }
+ useEffect(() => {
+  const finish = () => { penSync.current.drawing = false; requestAnimationFrame(applyTeacherPen); };
+  window.addEventListener('pointerup',finish);
+  window.addEventListener('pointercancel',finish);
+  const timer = setInterval(() => {
+   const state = penSync.current, m = model.current;
+   if (!m.ready || m.ws?.readyState !== 1 || !m.api) return;
+   if (state.role === 'admin') {
+    const width = m.api.getAppState().currentItemStrokeWidth;
+    if (Number.isFinite(width) && width >= 0.25 && width <= 4 && state.published !== width) {
+     m.ws.send(JSON.stringify({type:'teacher_pen',width}));
+     state.published = width;
+    }
+   } else applyTeacherPen();
+  },500);
+  return () => {
+   clearInterval(timer);
+   window.removeEventListener('pointerup',finish);
+   window.removeEventListener('pointercancel',finish);
+  };
+ }, []);
  const [activeTool, setActiveTool] = useState('selection');
  const [api,setApi]=useState(null),[ready,setReady]=useState(false),[connected,setConnected]=useState(false),[count,setCount]=useState(0),[status,setStatus]=useState('Подключаемся…'),[exporting,setExporting]=useState(false);
  const [sheets, setSheets] = useState(roomId ? [roomId] : []);
@@ -302,6 +344,14 @@ function App(){
  useEffect(()=>{if(!api||!roomId)return;const m=model.current;m.api=api;let stopped=false,retry=null,queue=Promise.resolve();
   async function receive(message){if(stopped)return;
    const initialStarted = message.initial ? performance.now() : null;
+   if (message.type === 'teacher_pen') {
+    if (Number.isFinite(message.width) && message.width >= 0.25 && message.width <= 4) {
+     penSync.current.width = message.width;
+     setTeacherWidth(message.width);
+     applyTeacherPen();
+    }
+    return;
+   }
    if(message.type==='sheets'){setSheets(message.sheets);return;}
    if(message.type==='error'){
     diagnostic('server_error',{code:message.code});
@@ -335,11 +385,15 @@ function App(){
    }
    if(Number.isInteger(message.usage))setUsage(message.usage);
    if(message.initial){
+    penSync.current.role = message.role;
+    penSync.current.published = null;
+    penSync.current.width = Number.isFinite(message.teacherPenWidth) ? message.teacherPenWidth : 1;
+    setTeacherWidth(penSync.current.width);
     m.canEdit = message.canEdit !== false;
     if ([message.lessonStartsAt, message.lessonEndsAt, message.serverTime].every(Number.isFinite)) {
      setSchedule({start:message.lessonStartsAt,end:message.lessonEndsAt,server:message.serverTime,received:performance.now()});
     }
-    setAccess({canEdit:m.canEdit, canAttachPdf:!!message.canAttachPdf, lessonId:message.lessonId});
+    setAccess({canEdit:m.canEdit, canAttachPdf:!!message.canAttachPdf, lessonId:message.lessonId, role:message.role});
    }
    if(message.initial && Array.isArray(message.sheets))setSheets(message.sheets);
    if(message.initial){diagnostic('scene_loaded',{connection:message.clientId,objects:message.elements.length});m.clientId=message.clientId;m.pending.clear();m.files=new Set(message.fileIds);m.sent.clear();m.cursors.clear();}
@@ -350,7 +404,7 @@ function App(){
    for(const element of message.elements)m.sent.set(element.id,stamp(element));
    const localBackground=api.getAppState().viewBackgroundColor,unsentBackground=m.lastBackground!==null&&localBackground!==m.lastBackground;
    m.applying=true;m.lastBackground=message.background;api.updateScene({elements:merged,appState:{viewBackgroundColor:unsentBackground?localBackground:message.background,isLoading:false},captureUpdate:CaptureUpdateAction.NEVER});m.applying=false;
-   if(message.initial){diagnostic('scene_ready',{connection:message.clientId,milliseconds:Math.round(performance.now()-initialStarted)});m.ready=true;m.failed=false;setReady(true);setConnected(true);if(merged.some(e=>!e.isDeleted))api.scrollToContent(merged,{fitToContent:true});}
+   if(message.initial){diagnostic('scene_ready',{connection:message.clientId,milliseconds:Math.round(performance.now()-initialStarted)});m.ready=true;applyTeacherPen();m.failed=false;setReady(true);setConnected(true);if(merged.some(e=>!e.isDeleted))api.scrollToContent(merged,{fitToContent:true});}
    if(message.senderId===m.clientId)m.pending.delete(message.seq);
    const unsent=api.getSceneElementsIncludingDeleted().some(e=>m.sent.get(e.id)!==stamp(e))||api.getAppState().viewBackgroundColor!==m.lastBackground;
    if(unsent){markDirty(true);schedule()}else if(!m.pending.size){markDirty(false);setStatus(replaced ? 'Лист очищен' : 'Сохранено на сервере')}
@@ -627,8 +681,11 @@ function App(){
   {!phone && toolbar && createPortal(drawingActions, toolbar)}
   {phone && <PhoneTools api={api} active={activeTool} disabled={!canDraw} insertGrid={insertGrid}
    insertTriangle={() => insertGeometry(GEOMETRY.find(spec => spec.id === 'triangle'))}
-   geometry={GEOMETRY} insertGeometry={insertGeometry}/>}
-  {strokePanel && createPortal(
+   geometry={GEOMETRY} insertGeometry={insertGeometry}
+   strokeWidth={strokeWidth} onStrokeWidthChange={changeStrokeWidth}
+   canFollow={access.role === 'student'} followTeacher={followTeacher}
+   teacherWidth={teacherWidth} onPenModeChange={choosePenMode}/>}
+  {strokePanel && !(phone && access.role === 'student' && followTeacher) && createPortal(
  <label className="stroke-width">
   <span className="stroke-width-label">Точная настройка толщины штриха</span>
   <input type="range" min="0.25" max="4" step="0.25"
@@ -638,6 +695,7 @@ function App(){
     strokeWidth={strokeWidth * 4.25} strokeLinecap="round" />
   </svg>
  </label>, strokePanel)}<div className="editor" ref={editor}
+  onPointerDownCapture={() => {penSync.current.drawing = true;}}
   onDragOverCapture={event=>{if(Array.from(event.dataTransfer.items).some(item=>item.kind==='file'&&item.type==='application/pdf'))event.preventDefault();}}
   onDropCapture={event=>receivePdf(event,event.dataTransfer.files)}
   onPasteCapture={event=>receivePdf(event,event.clipboardData.files)}>{selectedGrid && <GridControls key={selectedGrid.id} range={selectedGrid} disabled={!access.canEdit || !connected} onChange={resizeGrid} />}<Excalidraw excalidrawAPI={setApi} onChange={changed} onPointerUpdate={pointer} isCollaborating={true} viewModeEnabled={!access.canEdit || !connected || switchingSheet || clearingSheet} langCode="ru-RU" initialData={{elements:[],appState:{isLoading:true,viewBackgroundColor:'#ffffff',currentItemRoughness:0}}} validateEmbeddable={()=>false}><MainMenu><MainMenu.DefaultItems.LoadScene/><MainMenu.DefaultItems.SaveAsImage/><MainMenu.DefaultItems.ClearCanvas/><MainMenu.Separator/><MainMenu.DefaultItems.ToggleTheme/><MainMenu.DefaultItems.ChangeCanvasBackground/></MainMenu></Excalidraw></div>

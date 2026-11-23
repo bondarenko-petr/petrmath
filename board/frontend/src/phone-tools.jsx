@@ -38,7 +38,7 @@ function Icon({type}) {
   strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[type] || paths.more}</svg>;
 }
 
-export function PhoneTools({api, disabled, active, insertTriangle, insertGrid, geometry, insertGeometry}) {
+export function PhoneTools({api, disabled, active, insertTriangle, insertGrid, geometry, insertGeometry, strokeWidth, onStrokeWidthChange, canFollow, followTeacher, teacherWidth, onPenModeChange}) {
  const [panel, setPanel] = useState(null);
  const [shape, setShape] = useState('rectangle');
  const dialog = useRef(null);
@@ -70,7 +70,7 @@ export function PhoneTools({api, disabled, active, insertTriangle, insertGrid, g
   <div className="phone-tools" role="toolbar" aria-label="Инструменты доски">
    {[['selection','Выделение'],['hand','Рука'],['freedraw','Перо'],['eraser','Ластик']].map(([type,label]) =>
     <button type="button" key={type} title={label} aria-label={label} aria-pressed={active === type}
-     disabled={!api || (disabled && type !== 'hand')} onClick={() => choose(type)}><Icon type={type}/></button>)}
+     disabled={!api || (disabled && type !== 'hand')} onClick={event => {if(type === 'freedraw' && active === 'freedraw')open('stroke',event);else choose(type);}}><Icon type={type}/></button>)}
    <button type="button" title="Фигуры" aria-label="Фигуры" aria-haspopup="dialog" disabled={disabled}
     aria-pressed={shapes.some(([type]) => active === type)} onClick={event => open('shapes',event)}><Icon type={shape}/><span className="phone-chevron">⌄</span></button>
    <button type="button" title="Ещё инструменты" aria-label="Ещё инструменты" aria-haspopup="dialog" disabled={disabled}
@@ -78,18 +78,35 @@ export function PhoneTools({api, disabled, active, insertTriangle, insertGrid, g
   </div>
   {panel && <dialog ref={dialog} className="phone-sheet" onCancel={event => {event.preventDefault();close();}}
    onClick={event => {if(event.target === dialog.current)close();}} aria-labelledby="phone-sheet-title">
-   <div className="phone-sheet-heading"><h2 id="phone-sheet-title">{panel === 'shapes' ? 'Фигуры' : 'Ещё инструменты'}</h2>
+   <div className="phone-sheet-heading"><h2 id="phone-sheet-title">{panel === 'shapes' ? 'Фигуры' : panel === 'stroke' ? 'Толщина пера' : 'Ещё инструменты'}</h2>
     <button type="button" aria-label="Закрыть" onClick={close}>×</button></div>
-   <div className="phone-shape-choices">
+   {panel === 'stroke' ? <div className="phone-stroke-controls">
+    {canFollow && <fieldset className="phone-pen-mode">
+     <legend>Режим пера</legend>
+     <label><input type="radio" name="pen-mode" checked={followTeacher} onChange={() => onPenModeChange(true)}/>Как у преподавателя</label>
+     {followTeacher && <small>Толщина {teacherWidth} · обновляется автоматически</small>}
+     <label><input type="radio" name="pen-mode" checked={!followTeacher} onChange={() => onPenModeChange(false)}/>Своя толщина</label>
+    </fieldset>}
+    <label htmlFor="phone-stroke-width">Толщина пера — {strokeWidth}</label>
+    <input id="phone-stroke-width" type="range" min="0.25" max="4" step="0.25"
+     value={strokeWidth} disabled={disabled || (canFollow && followTeacher)} onChange={onStrokeWidthChange}/>
+    <svg viewBox="0 0 240 36" aria-label="Образец штриха"><path d="M12 24 Q60 4 108 20 T228 16"
+     fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round"/></svg>
+    <div className="phone-stroke-presets">{[0.25,0.5,1,2,4].map(width =>
+     <button type="button" key={width} aria-pressed={width === strokeWidth} disabled={disabled || (canFollow && followTeacher)}
+      onClick={() => onStrokeWidthChange({currentTarget:{value:width}})}>{width}</button>)}</div>
+    <button type="button" onClick={close}>Готово</button>
+   </div> : <div className="phone-shape-choices">
     {panel === 'shapes' ? shapes.map(([type,label]) => <button type="button" key={type} disabled={disabled}
-     onClick={() => choose(type)}><Icon type={type}/><span>{label}</span></button>) : <>
+     onClick={event => {if(type === 'freedraw' && active === 'freedraw')open('stroke',event);else choose(type);}}><Icon type={type}/><span>{label}</span></button>) : <>
+     <button type="button" disabled={disabled} onClick={() => setPanel('stroke')}>Толщина пера</button>
      <button type="button" disabled={disabled} onClick={() => choose('text')}>Текст</button>
      <button type="button" disabled={disabled} onClick={() => choose('image')}>Изображение</button>
      <button type="button" disabled={disabled} onClick={() => {insertGrid();close();}}>Координатная сетка</button>
      {geometry.map(spec => <button type="button" key={spec.id} disabled={disabled}
       onClick={() => {insertGeometry(spec);close();}}>{spec.name}</button>)}
     </>}
-   </div>
+   </div>}
   </dialog>}
  </>;
 }

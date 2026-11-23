@@ -447,7 +447,13 @@ def create_app(data_dir=None,origin=None,static_dir=None,trusted_proxy='127.0.0.
         async with room.lock:
             if len(room.peers)>=6:await socket.close(code=1013);return
             await socket.accept();peer=secrets.token_hex(8);room.peers[peer]=socket
-            await socket.send_text(encode({'type':'scene',**room.scene,'initial':True,'clientId':peer,'canEdit':user.get('can_edit',True) if isinstance(user,dict) else True,'lessonId':user.get('lesson_id') if isinstance(user,dict) else None,'lessonStartsAt':user.get('lesson_starts_at') if isinstance(user,dict) else None,'lessonEndsAt':user.get('lesson_ends_at') if isinstance(user,dict) else None,'serverTime':time.time(),'canAttachPdf':user.get('can_attach_pdf',False) if isinstance(user,dict) else False,'usage':sheet_usage(room.scene,room.path/'scene.json'),'sheets':lesson_sheets(room_id)[1],'fileIds':[p.stem for p in (room.path/'files').glob('*.json')]}))
+            root_id, _ = lesson_sheets(room_id)
+            pen_path = data / root_id / 'teacher-pen.json'
+            try:
+                teacher_width = json.loads(pen_path.read_text()).get('width', 1)
+            except FileNotFoundError:
+                teacher_width = 1
+            await socket.send_text(encode({'role':user.get('role') if isinstance(user,dict) else None,'teacherPenWidth':teacher_width,'type':'scene',**room.scene,'initial':True,'clientId':peer,'canEdit':user.get('can_edit',True) if isinstance(user,dict) else True,'lessonId':user.get('lesson_id') if isinstance(user,dict) else None,'lessonStartsAt':user.get('lesson_starts_at') if isinstance(user,dict) else None,'lessonEndsAt':user.get('lesson_ends_at') if isinstance(user,dict) else None,'serverTime':time.time(),'canAttachPdf':user.get('can_attach_pdf',False) if isinstance(user,dict) else False,'usage':sheet_usage(room.scene,room.path/'scene.json'),'sheets':lesson_sheets(room_id)[1],'fileIds':[p.stem for p in (room.path/'files').glob('*.json')]}))
             await room.broadcast({'type':'presence','count':len(room.peers)})
         frames=deque();started=time.monotonic();received=0;largest=0;max_rate=0;slowest=0;close_code=None;close_reason='unknown'
         message_budget = MESSAGE_BURST
@@ -471,6 +477,22 @@ def create_app(data_dir=None,origin=None,static_dir=None,trusted_proxy='127.0.0.
                 try:
                     message=json.loads(raw,parse_constant=lambda _:(_ for _ in ()).throw(ValueError('Некорректное число')))
                     if not isinstance(message,dict):raise ValueError('Некорректный запрос')
+                    if message.get('type') == 'teacher_pen':
+                        current_user = await auth(socket, room_id, write=True)
+                        if not isinstance(current_user, dict) or current_user.get('role') != 'admin':
+                            continue
+                        width = message.get('width')
+                        if type(width) not in (int, float) or not math.isfinite(width) or not 0.25 <= width <= 4:
+                            continue
+                        root_id, sheet_ids = lesson_sheets(room_id)
+                        root_room = store.room(root_id)
+                        async with root_room.lock:
+                            await asyncio.to_thread(atomic, data / root_id / 'teacher-pen.json', {'width': width})
+                            for sheet_id in sheet_ids:
+                                target = store.rooms.get(sheet_id)
+                                if target:
+                                    await target.broadcast({'type': 'teacher_pen', 'width': width})
+                        continue
                     if message.get('type')=='pointer':
                         x,y=message.get('x'),message.get('y')
                         if type(x) not in (int,float) or type(y) not in (int,float) or not math.isfinite(x+y) or abs(x)+abs(y)>2*10**7:continue
