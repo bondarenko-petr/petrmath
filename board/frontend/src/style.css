@@ -247,3 +247,18 @@ button:hover,.board-action-menu>summary:hover{background:#f1e8ff}button:disabled
 .phone-pen-mode label{display:flex;align-items:center;gap:8px;min-height:44px}
 .phone-pen-mode input[type=radio]{width:20px;height:20px;min-height:20px;margin:0;accent-color:#7015ef}
 .phone-pen-mode small{font-size:12px;padding-left:28px;color:#756b81}
+
+.lesson-exit{display:flex;align-items:center;gap:5px;min-height:44px}
+.lesson-exit svg{width:22px;height:22px;flex-shrink:0}
+.phone-board .lesson-exit{min-width:40px;padding:5px}
+.phone-board .lesson-exit span{display:none}
+.lesson-exit-dialog{width:min(420px,calc(100vw - 32px));box-sizing:border-box;border:1px solid #d9c7f5;border-radius:14px;padding:20px;color:#321653}
+.lesson-exit-dialog::backdrop{background:#21183266}
+.lesson-exit-dialog h2{font-size:20px}
+.lesson-exit-dialog button{margin:4px;min-height:44px}
+
+.call-button-icon{display:none}
+.phone-board .board-call-control>button{min-height:40px;min-width:36px;padding:5px}
+.phone-board .board-call-control>button>span{display:none}
+.phone-board .call-button-icon{display:block;width:22px;height:22px}
+.phone-board .floating-header{gap:4px}

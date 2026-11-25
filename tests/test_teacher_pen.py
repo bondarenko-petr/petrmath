@@ -22,7 +22,7 @@ class TeacherPenTests(unittest.TestCase):
            assert teacher.receive_json()['role']=='admin'
            teacher.receive_json()
            with client.websocket_connect('/ws/'+room,headers={'origin':'https://testserver'}) as student:
-            assert student.receive_json()['teacherPenWidth']==0.25
+            assert student.receive_json()['teacherPenWidth']==0.5
             student.receive_json();teacher.receive_json()
             teacher.send_json({'type':'teacher_pen','width':0.5})
             assert teacher.receive_json()=={'type':'teacher_pen','width':0.5}

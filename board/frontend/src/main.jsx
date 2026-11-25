@@ -93,6 +93,7 @@ const LessonCall = React.lazy(() => import('./lesson-call.jsx'));
 function BoardCall({lessonId}) {
  const [enabled, setEnabled] = useState(false);
  const [open, setOpen] = useState(false);
+ const entered = useRef(false);
  useEffect(() => {
   const controller = new AbortController();
   async function refresh() {
@@ -104,6 +105,7 @@ function BoardCall({lessonId}) {
     const active = response.ok && (await response.json()).enabled;
     if (controller.signal.aborted) return;
     setEnabled(Boolean(active));
+    if (active && !entered.current) { entered.current = true; setOpen(true); }
     if (!active) setOpen(false);
    } catch { /* Existing calls can recover from temporary network failures. */ }
   }
@@ -118,7 +120,9 @@ function BoardCall({lessonId}) {
  }, [lessonId]);
  if (!enabled) return null;
  return <div className="board-call-control">
-  <button type="button" aria-expanded={open} onClick={() => setOpen(true)}>Видеосвязь</button>
+  <button type="button" title="Видеосвязь" aria-label="Видеосвязь" aria-expanded={open} onClick={() => setOpen(true)}>
+   <svg className="call-button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 10 6-4v12l-6-4"/></svg><span>Видеосвязь</span>
+  </button>
   {open && <Suspense fallback={<p role="status">Загружаем видеосвязь…</p>}>
    <LessonCall lessonId={lessonId} onClose={() => setOpen(false)}/>
   </Suspense>}
@@ -127,11 +131,41 @@ function BoardCall({lessonId}) {
 
 function App(){
  const phone = usePhoneLayout();
- const [teacherWidth, setTeacherWidth] = useState(0.25);
+ const [exitState, setExitState] = useState(null);
+ const exitDialog = useRef(null);
+ useEffect(() => {
+  if (exitState && !exitDialog.current?.open) exitDialog.current?.showModal();
+ }, [exitState]);
+ function cancelExit() { exitDialog.current?.close(); setExitState(null); }
+ async function finishExit() {
+  const waits = [];
+  window.dispatchEvent(new CustomEvent('board-exit', {detail: waits}));
+  await Promise.race([Promise.allSettled(waits), new Promise(resolve => setTimeout(resolve, 2000))]);
+  const m = model.current;
+  m.leavingWithBackup = true;
+  clearTimeout(m.timer);
+  m.ws?.close();
+  location.assign(penSync.current.role === 'admin' ? '/admin.html' : '/account.html');
+ }
+ async function saveAndExit() {
+  setExitState('saving');
+  const m = model.current;
+  if (m.ws?.readyState === 1) m.failed = false;
+  if (m.failed) { setExitState('error'); return; }
+  const until = Date.now() + 12000;
+  while (Date.now() < until) {
+   await flush();
+   if (!m.dirty && !m.pending.size && !m.sending) { await finishExit(); return; }
+   if (m.failed || m.ws?.readyState !== 1) break;
+   await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  setExitState('error');
+ }
+ const [teacherWidth, setTeacherWidth] = useState(0.5);
  const [followTeacher, setFollowTeacher] = useState(() => {
   try { return sessionStorage.getItem('pen-mode-' + roomId) !== 'own'; } catch { return true; }
  });
- const penSync = useRef({drawing:false, role:null, width:0.25, following:true, phone:false, published:null});
+ const penSync = useRef({drawing:false, role:null, width:0.5, following:true, phone:false, published:null});
  penSync.current.following = followTeacher;
  penSync.current.phone = phone;
  function applyTeacherPen() {
@@ -182,7 +216,7 @@ function App(){
 
  const [clearingSheet, setClearingSheet] = useState(false);
  const [switchingSheet, setSwitchingSheet] = useState(false);
- const [strokeWidth, setStrokeWidth] = useState(0.25);
+ const [strokeWidth, setStrokeWidth] = useState(0.5);
  const [strokePanel, setStrokePanel] = useState(null);
  const editor = useRef(null);
  const pdfInput = useRef(null);
@@ -393,7 +427,7 @@ function App(){
    if(message.initial){
     penSync.current.role = message.role;
     penSync.current.published = null;
-    penSync.current.width = Number.isFinite(message.teacherPenWidth) ? message.teacherPenWidth : 0.25;
+    penSync.current.width = Number.isFinite(message.teacherPenWidth) ? message.teacherPenWidth : 0.5;
     setTeacherWidth(penSync.current.width);
     m.canEdit = message.canEdit !== false;
     if ([message.lessonStartsAt, message.lessonEndsAt, message.serverTime].every(Number.isFinite)) {
@@ -673,10 +707,22 @@ function App(){
     </ActionMenu>
    </div>
    <div className="board-lesson-tools">
+    <button type="button" className="lesson-exit" title="Выйти из урока" aria-label="Выйти из урока" onClick={() => setExitState('confirm')}>
+     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M9 4H3v16h6m5-13 5 5-5 5M7 12h12"/></svg><span>Выйти из урока</span>
+    </button>
     {access.lessonId && <BoardCall key={access.lessonId} lessonId={access.lessonId}/>}
     {lessonSchedule && <LessonTimer schedule={lessonSchedule}/>}
    </div>
   </header>
+  {exitState && <dialog ref={exitDialog} className="lesson-exit-dialog" aria-labelledby="exit-title"
+   onCancel={event => {event.preventDefault();if(exitState !== 'saving')cancelExit();}}>
+   <h2 id="exit-title">Выйти из урока?</h2>
+   {exitState === 'confirm' && <><p>Завершить участие и вернуться в кабинет?</p><button onClick={() => void saveAndExit()}>Выйти из урока</button><button onClick={cancelExit}>Остаться</button></>}
+   {exitState === 'saving' && <p role="status">Сохраняем изменения и отключаем связь…</p>}
+   {exitState === 'error' && <><p role="alert">Не удалось подтвердить сохранение. При выходе последние изменения могут потеряться.</p>
+    <button onClick={() => void saveAndExit()}>Повторить</button><button onClick={downloadSheetCopy}>Скачать копию текущего листа</button>
+    <button onClick={() => void finishExit()}>Выйти без сохранения</button><button onClick={cancelExit}>Остаться</button></>}
+  </dialog>}
   <input ref={pdfInput} type="file" accept="application/pdf,.pdf" hidden onChange={event=>{
    choosePdf(event.currentTarget.files?.[0]);
    event.currentTarget.value='';
@@ -704,7 +750,7 @@ function App(){
   onPointerDownCapture={() => {penSync.current.drawing = true;}}
   onDragOverCapture={event=>{if(Array.from(event.dataTransfer.items).some(item=>item.kind==='file'&&item.type==='application/pdf'))event.preventDefault();}}
   onDropCapture={event=>receivePdf(event,event.dataTransfer.files)}
-  onPasteCapture={event=>receivePdf(event,event.clipboardData.files)}>{selectedGrid && <GridControls key={selectedGrid.id} range={selectedGrid} disabled={!access.canEdit || !connected} onChange={resizeGrid} />}<Excalidraw excalidrawAPI={setApi} onChange={changed} onPointerUpdate={pointer} isCollaborating={true} viewModeEnabled={!access.canEdit || !connected || switchingSheet || clearingSheet} langCode="ru-RU" initialData={{elements:[],appState:{isLoading:true,viewBackgroundColor:'#ffffff',currentItemRoughness:0,currentItemStrokeWidth:0.25}}} validateEmbeddable={()=>false}><MainMenu><MainMenu.DefaultItems.LoadScene/><MainMenu.DefaultItems.SaveAsImage/><MainMenu.DefaultItems.ClearCanvas/><MainMenu.Separator/><MainMenu.DefaultItems.ToggleTheme/><MainMenu.DefaultItems.ChangeCanvasBackground/></MainMenu></Excalidraw></div>
+  onPasteCapture={event=>receivePdf(event,event.clipboardData.files)}>{selectedGrid && <GridControls key={selectedGrid.id} range={selectedGrid} disabled={!access.canEdit || !connected} onChange={resizeGrid} />}<Excalidraw excalidrawAPI={setApi} onChange={changed} onPointerUpdate={pointer} isCollaborating={true} viewModeEnabled={!access.canEdit || !connected || switchingSheet || clearingSheet} langCode="ru-RU" initialData={{elements:[],appState:{isLoading:true,viewBackgroundColor:'#ffffff',currentItemRoughness:0,currentItemStrokeWidth:0.5}}} validateEmbeddable={()=>false}><MainMenu><MainMenu.DefaultItems.LoadScene/><MainMenu.DefaultItems.SaveAsImage/><MainMenu.DefaultItems.ClearCanvas/><MainMenu.Separator/><MainMenu.DefaultItems.ToggleTheme/><MainMenu.DefaultItems.ChangeCanvasBackground/></MainMenu></Excalidraw></div>
   <footer className="floating-footer">
   <div className="sheet-tools">
    <label>Лист <select aria-label="Лист" value={roomId} disabled={!ready || switchingSheet} onChange={event=>void switchSheet(event.target.value)}>

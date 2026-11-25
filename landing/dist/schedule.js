@@ -11,38 +11,6 @@ function text(tag,value){const e=document.createElement(tag);e.textContent=value
 function money(value){return (value/100).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₽'}
 async function api(path='',method='GET',data){if(method==='GET'&&config?.role==='admin'&&path.startsWith('?'))path+='&display_timezone='+encodeURIComponent(config.timezone);const response=await fetch('/api/lessons'+path,{method,cache:'no-store',headers:method==='GET'?{}:{'Content-Type':'application/json','X-Requested-With':'KrugPi'},...(data?{body:JSON.stringify(data)}:{})});const result=await response.json();if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:response.status===401?'Войдите в личный кабинет.':'Проверьте заполнение полей.');return result}
 function scopeFor(row){if(!row.series_id)return 'one';const choice=prompt('Область изменения: 1 — только этот урок; 2 — этот и следующие; 3 — все будущие уроки серии','1');return {'1':'one','2':'following','3':'series'}[choice]}
-function addCallControl(card, row) {
- const wrapper = text('div', '');
- wrapper.hidden = true;
- const toggle = text('input', '');
- toggle.type = 'checkbox';
- const label = text('label', '');
- label.append(toggle, ' Видеосвязь для этого урока');
- const message = text('small', '');
- message.setAttribute('role', 'status');
- wrapper.append(label, message);
- card.append(wrapper);
- const path = '/' + row.id + '/call';
- api(path).then(state => {
-  toggle.checked = state.enabled;
-  wrapper.hidden = !state.available;
- }).catch(() => {});
- toggle.onchange = async () => {
-  const enabled = toggle.checked;
-  toggle.disabled = true;
-  message.textContent = '';
-  try {
-   const state = await api(path, 'PUT', {enabled});
-   toggle.checked = state.enabled;
-  } catch (error) {
-   message.textContent = error.message;
-   const state = await api(path).catch(() => ({enabled: !enabled}));
-   toggle.checked = state.enabled;
-  } finally {
-   toggle.disabled = false;
-  }
- };
-}
 function card(row,actions=true){const e=text('article','');e.className='lesson-card '+row.status;e.append(text('strong',new Date(row.starts_at).toLocaleString('ru-RU',{timeZone:config.timezone,dateStyle:'short',timeStyle:'short'})));if(config.role==='admin'){e.append(text('h3',row.student_name));if(row.student_timezone)e.append(text('p','У ученика ('+row.student_timezone+'): '+new Date(row.starts_at).toLocaleString('ru-RU',{timeZone:row.student_timezone,dateStyle:'short',timeStyle:'short'})));}if(row.series_id)e.append(text('p','Постоянное время серии: '+row.timezone));if(row.status==='completed'){const materialLink=text('a','Задание и конспект');materialLink.href='materials.html?lesson_id='+row.id+'&student_id='+row.student_id;e.append(materialLink)}e.append(text('p',states[row.status]+' · '+row.duration_minutes+' мин · '+money(row.price_kopecks)));if(row.topic)e.append(text('p',row.topic));if(row.series_id)e.append(text('small','Повторяющееся занятие'));if(row.meeting_url&&row.status==='scheduled'){const a=text('a','Открыть онлайн-урок →');a.href=row.meeting_url;a.target='_blank';a.rel='noopener noreferrer';e.append(text('p',''),a)}window.addLessonBoardAction?.(e,row,config.timezone);if(config.role==='admin'&&actions&&row.status==='completed'){const b=text('button','Неявка ученика');b.type='button';b.onclick=()=>openNoShow(row);e.append(b)}if(config.role==='admin'&&actions&&row.status!=='completed'){const controls=text('div','');controls.className='lesson-actions';for(const [label,handler] of [['Изменить',()=>openEditor(row)],[row.status==='cancelled'?'Восстановить урок':'Отменить урок',()=>changeStatus(row,row.status==='cancelled'?'scheduled':'cancelled')],['Проведено',()=>changeStatus(row,'completed')],['Неявка ученика',()=>openNoShow(row)],['Удалить',()=>remove(row)]]){const b=text('button',label);b.type='button';b.onclick=handler;controls.append(b)}e.append(controls)}return e}
 let studentListGeneration=0;
 async function loadActiveStudents(){
@@ -132,7 +100,7 @@ function setupPrimaryZone(){const picker=$('#primary-zone'),names={'Europe/Berli
 $('#primary-zone').onchange=async()=>{const picker=$('#primary-zone'),previous=config.timezone,next=picker.value;if(!validZone(next)){picker.value=previous;return}config.timezone=next;config.today=WeeklyCalendar.local(new Date(),next).day;try{localStorage.setItem('krug-pi-primary-zone',next)}catch{}if(secondaryZone===next){secondaryZone=['','Europe/Berlin','Europe/Moscow','Europe/London','UTC'].includes(previous)?previous:'';$('#secondary-zone').value=secondaryZone;try{localStorage.setItem('krug-pi-secondary-zone',secondaryZone)}catch{}}$('#zone').textContent='Все даты и время: '+next;offset=0;listGeneration++;calendarGeneration++;picker.disabled=true;$('#status').textContent='Обновляем часовой пояс…';try{await refresh();$('#status').textContent='Часовой пояс изменён. Выбор сохранён в этом браузере.'}catch(e){$('#status').textContent=e.message}finally{picker.disabled=false}};
 $('#secondary-zone').onchange=()=>{secondaryZone=$('#secondary-zone').value;try{localStorage.setItem('krug-pi-secondary-zone',secondaryZone)}catch{}updateEditorTimeHint();void calendar().catch(e=>$('#status').textContent=e.message)};
 form.onsubmit=async event=>{event.preventDefault();const price=form.elements.price.value.replace(',','.');if(!/^\d+(\.\d{1,2})?$/.test(price)){ $('#form-status').textContent='Введите цену с точностью до копеек';return}const [rub,kop='']=price.split('.');const data={student_id:Number(form.elements.student_id.value),starts_at:form.elements.starts_at.value,timezone:config.timezone,duration_minutes:Number(form.elements.duration_minutes.value),price_kopecks:Number(rub)*100+Number(kop.padEnd(2,'0')),topic:form.elements.topic.value,meeting_url:form.elements.meeting_url.value};if(editing){data.scope=form.elements.scope.value;const [day,time]=data.starts_at.split('T'),[h,m]=time.split(':').map(Number),instants=WeeklyCalendar.instants(day,h*60+m,config.timezone);if(instants.length!==1){$('#form-status').textContent='Выберите однозначное местное время';return}data.starts_at=new Date(instants[0]).toISOString();data.timezone=editing.timezone;}else{data.recurrence_timezone=form.elements.recurrence_timezone.value;data.weekdays=[...form.querySelectorAll('[name=weekday]:checked')].map(e=>Number(e.value));data.recurrence_end=form.elements.recurrence_end.value||null}const button=form.querySelector('[type=submit]');button.disabled=true;try{const result=await api(editing?'/'+editing.id:'',editing?'PUT':'POST',data);$('#editor').hidden=true;$('#primary-zone').disabled=false;$('#status').textContent=editing?'Занятия обновлены':'Создано занятий: '+result.count;await refresh()}catch(e){$('#form-status').textContent=e.message}finally{button.disabled=false}};
-function showCalendarLesson(row){const panel=$('#selected-lesson');panel.replaceChildren();const close=text('button','Закрыть');close.type='button';close.onclick=()=>panel.hidden=true;const details=card(row);if(config.role==='admin'&&row.status==='scheduled')addCallControl(details,row);panel.append(text('h2','Занятие'),close,details);panel.hidden=false;panel.scrollIntoView({block:'nearest'});panel.focus()}
+function showCalendarLesson(row){const panel=$('#selected-lesson');panel.replaceChildren();const close=text('button','Закрыть');close.type='button';close.onclick=()=>panel.hidden=true;const details=card(row);panel.append(text('h2','Занятие'),close,details);panel.hidden=false;panel.scrollIntoView({block:'nearest'});panel.focus()}
 function createFromCalendar(value,duration){if(!students.length){$('#status').textContent='Сначала добавьте активного ученика в кабинете администратора.';return}openEditor();form.elements.starts_at.value=value;if(duration!==undefined){calendarDuration=duration;form.elements.duration_minutes.value=duration}updateEditorTimeHint();form.elements.starts_at.focus()}
 async function calendar(){
  const generation=++calendarGeneration,requestedWeek=weekStart,end=plus(requestedWeek,7),root=$('#calendar');

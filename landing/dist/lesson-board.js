@@ -11,7 +11,7 @@
    const status = document.createElement('small'); status.setAttribute('role','status');
    const hint = document.createElement('p'); hint.className = 'muted small';
    hint.textContent = 'Для работы на общей доске нажмите «Открыть доску». Доступ открывается за 30 минут до начала занятия.';
-   const video = document.createElement('button'); video.type = 'button'; video.disabled = true; video.textContent = 'Видеосвязь · Скоро';
+   if (lesson.status === 'scheduled') hint.textContent += ' При открытии доски вы подключитесь к разговору. Микрофон включится автоматически после разрешения браузера. Камеру можно включить самостоятельно.';
    let lifecycle = {}, timer;
    const format = value => new Date(value * 1000).toLocaleString('ru-RU', {timeZone:timezone,dateStyle:'short',timeStyle:'short'});
    function render() {
@@ -21,11 +21,11 @@
     const remaining = opensAt - Date.now();
     if (lesson.status === 'scheduled' && remaining > 0) {
      status.textContent='Доска откроется '+format(opensAt / 1000);
-     slot.replaceChildren(status,video,hint);
+     slot.replaceChildren(status,hint);
      timer=setTimeout(render,Math.min(remaining,60000));
     } else {
      status.textContent=lifecycle.expires_at && !config.cleanup_enabled ? 'Автоматическое удаление доски пока выключено.' : lifecycle.expires_at ? 'Доска доступна до '+format(lifecycle.expires_at)+(lifecycle.error ? '. Удаление отложено: не удалось сохранить PDF или завершить очистку.' : '') : '';
-     slot.replaceChildren(button,video,status,hint);
+     slot.replaceChildren(button,status,hint);
     }
    }
    button.onclick = async () => {

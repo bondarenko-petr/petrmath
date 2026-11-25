@@ -1,4 +1,4 @@
-"""Opt-in, self-hosted video rooms for scheduled lessons."""
+"""Self-hosted video rooms available to all scheduled lesson participants."""
 import base64
 import hashlib
 import hmac
@@ -11,10 +11,8 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, StrictBool
 
 from accounts import database, guard
-from admin import require_admin
 from board.app import atomic
 from lessons import get_lesson, member
 
@@ -74,10 +72,6 @@ def eligible(lesson):
     return lesson['status'] == 'scheduled' and lesson['starts_at'] - OPEN_BEFORE_SECONDS <= time.time()
 
 
-class CallMode(BaseModel):
-    enabled: StrictBool
-
-
 @router.get('/{lesson_id}/call')
 def call_status(lesson_id: int, response: Response, user=Depends(member)):
     response.headers['Cache-Control'] = 'no-store'
@@ -88,34 +82,8 @@ def call_status(lesson_id: int, response: Response, user=Depends(member)):
     lesson, path = lesson_and_path(lesson_id)
     if user['role'] != 'admin' and lesson['student_id'] != user['id']:
         raise HTTPException(404, 'Занятие не найдено')
-    available = lesson['status'] == 'scheduled' if user['role'] == 'admin' else eligible(lesson)
-    current = state(path)
-    return {'available': available, 'enabled': available and current.get('enabled', False)}
-
-
-@router.put('/{lesson_id}/call')
-def set_call(lesson_id: int, mode: CallMode, request: Request, user=Depends(require_admin)):
-    guard(request)
-    from lesson_board import board_enabled
-    config = settings() if board_enabled() else None
-    if not config:
-        raise HTTPException(503, 'Видеосвязь пока не настроена')
-    with lock:
-        lesson, path = lesson_and_path(lesson_id)
-        current = state(path)
-        if mode.enabled:
-            if lesson['status'] != 'scheduled':
-                raise HTTPException(409, 'Видеосвязь включается для запланированного занятия')
-            if current.get('enabled'):
-                return {'enabled': True}
-            if current.get('room'):
-                room_service(config, 'DeleteRoom', {'room': current['room']})
-            atomic(path, {'enabled': True, 'room': secrets.token_hex(24)})
-        elif current.get('room'):
-            atomic(path, {**current, 'enabled': False})
-            room_service(config, 'DeleteRoom', {'room': current['room']})
-            atomic(path, {})
-    return {'enabled': mode.enabled}
+    available = eligible(lesson)
+    return {'available': available, 'enabled': available}
 
 
 @router.post('/{lesson_id}/call/token')
@@ -130,9 +98,12 @@ def join_call(lesson_id: int, request: Request, response: Response, user=Depends
         board_mapping(lesson_id, user)
         lesson, path = lesson_and_path(lesson_id)
         current = state(path)
-        if not eligible(lesson) or not current.get('enabled'):
+        if not eligible(lesson):
             raise HTTPException(403, 'Видеосвязь для этого урока выключена')
-        room = current['room']
+        room = current.get('room')
+        if not room:
+            room = secrets.token_hex(24)
+            atomic(path, {'room': room})
         room_service(config, 'CreateRoom', {'name': room, 'max_participants': 2, 'empty_timeout': 90})
         url, key, secret = config
         identity = 'teacher' if user['role'] == 'admin' else 'student-' + str(user['id'])

@@ -108,13 +108,31 @@ export default function LessonCall({lessonId, onClose}) {
     }
     updatePeer();
     setRoom(connection);
-    setStatus('Подключено. Включите микрофон, чтобы начать разговор.');
+    setStatus('Подключено');
+    try {
+     await connection.localParticipant.setMicrophoneEnabled(true);
+     if (closed) { await connection.disconnect(); return; }
+     setMicrophone(true);
+    } catch {
+     if (!closed) setStatus('Микрофон не включён. Разрешите доступ в браузере и нажмите значок микрофона.');
+    }
    } catch (error) {
     if (!closed) setStatus(error.message || 'Видеосвязь недоступна');
    }
   }
+  const disconnect = event => {
+   closed = true;
+   session.current = null;
+   for (const publication of connection.localParticipant.trackPublications.values()) publication.track?.stop();
+   const pending = connection.disconnect();
+   if (event?.detail && Array.isArray(event.detail)) event.detail.push(pending);
+  };
+  window.addEventListener('board-exit', disconnect);
+  window.addEventListener('pagehide', disconnect);
   void connect();
   return () => {
+   window.removeEventListener('board-exit', disconnect);
+   window.removeEventListener('pagehide', disconnect);
    closed = true;
    request.abort();
    session.current = null;
