@@ -450,9 +450,9 @@ def create_app(data_dir=None,origin=None,static_dir=None,trusted_proxy='127.0.0.
             root_id, _ = lesson_sheets(room_id)
             pen_path = data / root_id / 'teacher-pen.json'
             try:
-                teacher_width = json.loads(pen_path.read_text()).get('width', 0.5)
+                teacher_width = json.loads(pen_path.read_text()).get('width', 0.25)
             except FileNotFoundError:
-                teacher_width = 0.5
+                teacher_width = 0.25
             await socket.send_text(encode({'role':user.get('role') if isinstance(user,dict) else None,'teacherPenWidth':teacher_width,'type':'scene',**room.scene,'initial':True,'clientId':peer,'canEdit':user.get('can_edit',True) if isinstance(user,dict) else True,'lessonId':user.get('lesson_id') if isinstance(user,dict) else None,'lessonStartsAt':user.get('lesson_starts_at') if isinstance(user,dict) else None,'lessonEndsAt':user.get('lesson_ends_at') if isinstance(user,dict) else None,'serverTime':time.time(),'canAttachPdf':user.get('can_attach_pdf',False) if isinstance(user,dict) else False,'usage':sheet_usage(room.scene,room.path/'scene.json'),'sheets':lesson_sheets(room_id)[1],'fileIds':[p.stem for p in (room.path/'files').glob('*.json')]}))
             await room.broadcast({'type':'presence','count':len(room.peers)})
         frames=deque();started=time.monotonic();received=0;largest=0;max_rate=0;slowest=0;close_code=None;close_reason='unknown'
