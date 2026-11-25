@@ -381,10 +381,10 @@ function App(){
     m.failed = false;
     m.lastBackground = message.background;
     m.applying = true;
-    const {scrollX, scrollY, zoom} = api.getAppState();
+    const {scrollX, scrollY, zoom, currentItemStrokeWidth} = api.getAppState();
     api.resetScene({resetLoadingState: true});
     api.updateScene({
-     appState: {scrollX, scrollY, zoom, collaborators: new Map(m.cursors), viewBackgroundColor: message.background},
+     appState: {scrollX, scrollY, zoom, currentItemStrokeWidth, collaborators: new Map(m.cursors), viewBackgroundColor: message.background},
      captureUpdate: CaptureUpdateAction.NEVER,
     });
     m.applying = false;
