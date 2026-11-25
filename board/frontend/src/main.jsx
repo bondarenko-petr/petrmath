@@ -90,7 +90,7 @@ function LessonTimer({schedule}) {
 }
 const LessonCall = React.lazy(() => import('./lesson-call.jsx'));
 
-function BoardCall({lessonId}) {
+function BoardCall({lessonId, phone, onExitLesson}) {
  const [enabled, setEnabled] = useState(false);
  const [open, setOpen] = useState(false);
  const entered = useRef(false);
@@ -120,11 +120,11 @@ function BoardCall({lessonId}) {
  }, [lessonId]);
  if (!enabled) return null;
  return <div className="board-call-control">
-  <button type="button" title="Видеосвязь" aria-label="Видеосвязь" aria-expanded={open} onClick={() => setOpen(true)}>
+  {(!phone || !open) && <button type="button" title="Видеосвязь" aria-label="Видеосвязь" aria-expanded={open} onClick={() => setOpen(true)}>
    <svg className="call-button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="m15 10 6-4v12l-6-4"/></svg><span>Видеосвязь</span>
-  </button>
+  </button>}
   {open && <Suspense fallback={<p role="status">Загружаем видеосвязь…</p>}>
-   <LessonCall lessonId={lessonId} onClose={() => setOpen(false)}/>
+   <LessonCall lessonId={lessonId} phone={phone} onExitLesson={onExitLesson} onClose={() => setOpen(false)}/>
   </Suspense>}
  </div>;
 }
@@ -710,7 +710,7 @@ function App(){
     <button type="button" className="lesson-exit" title="Выйти из урока" aria-label="Выйти из урока" onClick={() => setExitState('confirm')}>
      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M9 4H3v16h6m5-13 5 5-5 5M7 12h12"/></svg><span>Выйти из урока</span>
     </button>
-    {access.lessonId && <BoardCall key={access.lessonId} lessonId={access.lessonId}/>}
+    {access.lessonId && <BoardCall key={access.lessonId} lessonId={access.lessonId} phone={phone} onExitLesson={() => setExitState('confirm')}/>}
     {lessonSchedule && <LessonTimer schedule={lessonSchedule}/>}
    </div>
   </header>
