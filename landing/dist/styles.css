@@ -134,3 +134,17 @@ dialog p { font-size: 18px; line-height: 1.7; }
 .trial-contact-email{background:#fff;color:#6410ed!important}
 .trial-contact-button:focus-visible{outline:3px solid #ffdc64;outline-offset:4px}
 @media(max-width:600px){.trial-contact-actions{flex-direction:column;padding:0 16px}.trial-contact-button{width:100%;box-sizing:border-box}}
+
+.free-materials{padding:56px 20px;background:#fff;scroll-margin-top:20px;color:#321653}
+.free-materials-inner{max-width:1140px;margin:auto}
+.free-materials h2{margin:0 0 16px;font-size:36px;text-align:center;font-weight:700}
+.free-materials-intro{max-width:760px;margin:0 auto 28px;text-align:center;font-size:18px;line-height:1.6}
+.free-materials-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.free-material-card{display:flex;flex-direction:column;padding:28px;border:1px solid #e0d3f2;border-radius:14px;background:#f8f5fd}
+.free-material-card h3{margin:0 0 12px;font-size:28px;font-weight:700}
+.free-material-card p{font-size:17px;line-height:1.6;margin:0 0 16px}
+.free-material-card .free-material-meta{font-size:14px;color:#70627f}
+.free-material-download{display:flex;align-items:center;justify-content:center;margin-top:auto;min-height:48px;padding:12px 18px;border-radius:6px;background:#6410ed;color:#fff!important;text-decoration:none;text-align:center;font-size:17px;font-weight:600}
+.free-material-download:hover{background:#4c09b9}
+.free-material-download:focus-visible{outline:3px solid #b99ae9;outline-offset:4px}
+@media(max-width:600px){.free-materials{padding:36px 16px}.free-materials h2{font-size:28px}.free-materials-grid{grid-template-columns:1fr;gap:16px}.free-material-card{padding:22px}.free-materials-intro{font-size:16px}}
