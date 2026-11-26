@@ -10,7 +10,7 @@ class TrialManagementTests(unittest.TestCase):
         self.post=support.AccountTests.post.__get__(self)
         self.post('login',{'username':'teacher','password':'Teacher password!'})
         self.payload={'name':'Иван','email':'ivan@example.com','phone':'+79991234567','message':'ОГЭ','courses':['ОГЭ'],'consent':True}
-        result=self.client.post('/api/trial-requests',json=self.payload)
+        result=self.client.post('/api/trial-requests',headers=self.headers,json=self.payload)
         self.assertEqual(result.status_code,201,result.text)
         self.request_id=self.list().json()['items'][0]['id']
 
@@ -60,7 +60,7 @@ class TrialManagementTests(unittest.TestCase):
         self.assertEqual(self.list(status='contacting').json()['total'],0)
         self.update(status='trial_scheduled')
         self.assertEqual(self.list(status='trial_scheduled').json()['total'],1)
-        self.client.post('/api/trial-requests',json=self.payload|{'name':'Другой'})
+        self.client.post('/api/trial-requests',headers=self.headers,json=self.payload|{'name':'Другой'})
         first=self.list(limit=1).json();second=self.list(limit=1,offset=1).json()
         self.assertEqual(first['total'],2)
         self.assertNotEqual(first['items'][0]['id'],second['items'][0]['id'])

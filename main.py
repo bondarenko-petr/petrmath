@@ -2,15 +2,15 @@
 import sqlite3
 import mysql.connector
 from database import save_request
-from accounts import router as accounts_router
-from admin import router as admin_router
+from accounts import router as accounts_router, guard
+from admin import router as admin_router, require_admin
 from lessons import router as lessons_router
 from finance import router as finance_router
 from materials import router as materials_router
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -59,7 +59,8 @@ def health() -> dict[str, str]:
 
 
 @app.post("/api/trial-requests", status_code=201, tags=["Trial lessons"])
-def create_trial_request(request: TrialRequest) -> dict[str, str]:
+def create_trial_request(request: TrialRequest, http_request: Request, user=Depends(require_admin)) -> dict[str, str]:
+    guard(http_request)
     try:
         save_request(request)
     except (OSError, sqlite3.Error, mysql.connector.Error, ValueError) as error:

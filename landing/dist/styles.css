@@ -126,3 +126,11 @@ dialog p { font-size: 18px; line-height: 1.7; }
   .u-header .u-image-1 { width: 140px; height: 52px; }
   .u-header .account-action { grid-column: 1 / -1; justify-self: end; padding: 10px 22px; font-size: 16px; }
 }
+
+#carousel_0f8f .u-sheet{min-height:0;padding-bottom:48px}
+.trial-contact-actions{display:flex;justify-content:center;align-items:center;gap:16px;flex-wrap:wrap;margin:24px auto 0;padding:16px;max-width:760px}
+.trial-contact-button{display:inline-flex;justify-content:center;align-items:center;min-height:48px;padding:14px 24px;border-radius:6px;font-size:18px;font-weight:600;text-decoration:none;color:#fff!important;text-align:center}
+.trial-contact-telegram{background:#187da9}
+.trial-contact-email{background:#fff;color:#6410ed!important}
+.trial-contact-button:focus-visible{outline:3px solid #ffdc64;outline-offset:4px}
+@media(max-width:600px){.trial-contact-actions{flex-direction:column;padding:0 16px}.trial-contact-button{width:100%;box-sizing:border-box}}

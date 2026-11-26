@@ -8,6 +8,23 @@ import main
 
 
 class TrialRequestTests(unittest.TestCase):
+    def setUp(self):
+        main.app.dependency_overrides[main.require_admin] = lambda: {'id':1,'role':'admin'}
+        self.guard_patch = patch('main.guard')
+        self.guard_patch.start()
+
+    def tearDown(self):
+        main.app.dependency_overrides.pop(main.require_admin, None)
+        self.guard_patch.stop()
+
+    def test_public_requests_are_disabled(self):
+        main.app.dependency_overrides.pop(main.require_admin, None)
+        with patch('main.save_request') as save:
+            response = TestClient(main.app).post('/api/trial-requests',
+                json=dict(name='Тест',email='test@example.com',courses=['ОГЭ'],consent=True))
+            self.assertEqual(response.status_code,401)
+            save.assert_not_called()
+
     def test_saved_request_survives_new_connection(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict('os.environ', {'DB_BACKEND':'sqlite','TRIAL_REQUESTS_DB':str(Path(directory) / 'requests.sqlite3')}):
             client = TestClient(main.app)
