@@ -2,9 +2,14 @@ import React, {useEffect, useRef, useState} from 'react';
 
 export function usePhoneLayout() {
  const [phone, setPhone] = useState(false);
+ const [tablet, setTablet] = useState(false);
  useEffect(() => {
   const touch = matchMedia('(any-pointer: coarse)');
-  const update = () => setPhone(touch.matches && Math.min(screen.width, screen.height) < 600 && innerWidth <= 1000);
+  const update = () => {
+   const shortSide = Math.min(screen.width, screen.height);
+   setPhone(touch.matches && shortSide < 600 && innerWidth <= 1000);
+   setTablet(touch.matches && shortSide >= 600 && shortSide <= 1100 && innerWidth <= 1600);
+  };
   update();
   touch.addEventListener('change', update);
   window.addEventListener('resize', update);
@@ -15,8 +20,9 @@ export function usePhoneLayout() {
  }, []);
  useEffect(() => {
   document.documentElement.classList.toggle('phone-board', phone);
-  return () => document.documentElement.classList.remove('phone-board');
- }, [phone]);
+  document.documentElement.classList.toggle('tablet-board', tablet);
+  return () => document.documentElement.classList.remove('phone-board', 'tablet-board');
+ }, [phone, tablet]);
  return phone;
 }
 

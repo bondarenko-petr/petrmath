@@ -284,3 +284,10 @@ button:hover,.board-action-menu>summary:hover{background:#f1e8ff}button:disabled
  .phone-board .board-island .brand{font-size:0}
  .phone-board .board-island .brand span{font-size:17px}
 }
+
+.tablet-board .board-lesson-tools{display:grid;grid-template-columns:auto auto;gap:6px 8px;justify-items:end}
+.tablet-board .board-lesson-tools>.board-call-control{grid-column:1;grid-row:1}
+.tablet-board .board-lesson-tools>.lesson-timer{grid-column:2;grid-row:1}
+.tablet-board .board-lesson-tools>.lesson-exit{grid-column:2;grid-row:2}
+.tablet-board .editor{margin-top:112px}
+.tablet-board .editor .App-menu_top__left{padding-top:0}
