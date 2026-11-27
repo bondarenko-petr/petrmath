@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field
 
 from accounts import database, guard
 from board.app import atomic
@@ -42,13 +43,15 @@ def sign(key, secret, grants, identity='', name=''):
 
 def room_service(config, method, payload):
     _, key, secret = config
-    token = sign(key, secret, {'roomCreate': True})
+    grants = {'roomAdmin': True, 'room': payload['room']} if method == 'ListParticipants' else {'roomCreate': True}
+    token = sign(key, secret, grants)
     try:
         response = httpx.post(f'http://127.0.0.1:7880/twirp/livekit.RoomService/{method}',
                               json=payload, headers={'Authorization': 'Bearer ' + token}, timeout=5)
         if method == 'DeleteRoom' and response.status_code == 404 and response.headers.get('content-type', '').startswith('application/json') and response.json().get('code') == 'not_found':
             return
         response.raise_for_status()
+        return response.json()
     except httpx.HTTPError as error:
         raise HTTPException(503, 'Сервис видеосвязи недоступен. Повторите попытку.') from error
 
@@ -86,14 +89,21 @@ def call_status(lesson_id: int, response: Response, user=Depends(member)):
     return {'available': available, 'enabled': available}
 
 
+class CallDevice(BaseModel):
+    deviceId: str = Field(default='', max_length=100)
+    transfer: bool = False
+
+
 @router.post('/{lesson_id}/call/token')
-def join_call(lesson_id: int, request: Request, response: Response, user=Depends(member)):
+def join_call(lesson_id: int, request: Request, response: Response,
+              device: CallDevice | None = None, user=Depends(member)):
     guard(request)
     response.headers['Cache-Control'] = 'no-store'
     from lesson_board import board_mapping
     config = settings()
     if not config:
         raise HTTPException(404, 'Видеосвязь выключена')
+    device = device or CallDevice()
     with lock:
         board_mapping(lesson_id, user)
         lesson, path = lesson_and_path(lesson_id)
@@ -107,7 +117,39 @@ def join_call(lesson_id: int, request: Request, response: Response, user=Depends
         room_service(config, 'CreateRoom', {'name': room, 'max_participants': 2, 'empty_timeout': 90})
         url, key, secret = config
         identity = 'teacher' if user['role'] == 'admin' else 'student-' + str(user['id'])
+        participants = room_service(config, 'ListParticipants', {'room': room}).get('participants', [])
+        active = next((p for p in participants if p.get('identity') == identity), None)
+        claims = current.get('devices', {})
+        pending = claims.get(identity, {})
+        reserved = pending.get('until', 0) > time.time()
+        if (active or reserved) and not device.transfer:
+            return {'otherDevice': True}
+        microphone = True
+        if active:
+            microphone = any(t.get('source') in ('MICROPHONE', 2) and not t.get('muted', False)
+                             for t in active.get('tracks', []))
+        elif reserved:
+            microphone = pending.get('microphone', False)
+        # Reserve the identity until the issued token expires, covering simultaneous opens.
+        claims[identity] = {'id': device.deviceId, 'until': time.time() + 60, 'microphone': microphone}
+        atomic(path, {**current, 'room': room, 'devices': claims})
         token = sign(key, secret, {'roomJoin': True, 'room': room, 'canPublish': True,
                                    'canSubscribe': True, 'canPublishData': False,
                                    'canPublishSources': ['camera', 'microphone']}, identity, user['name'])
-    return {'url': url, 'token': token}
+    return {'url': url, 'token': token, 'microphone': microphone}
+
+
+@router.post('/{lesson_id}/call/release')
+def release_call(lesson_id: int, request: Request, device: CallDevice, user=Depends(member)):
+    guard(request)
+    from lesson_board import board_mapping
+    with lock:
+        board_mapping(lesson_id, user)
+        _, path = lesson_and_path(lesson_id)
+        current = state(path)
+        identity = 'teacher' if user['role'] == 'admin' else 'student-' + str(user['id'])
+        claims = current.get('devices', {})
+        if device.deviceId and claims.get(identity, {}).get('id') == device.deviceId:
+            claims.pop(identity)
+            atomic(path, {**current, 'devices': claims})
+    return {'ok': True}

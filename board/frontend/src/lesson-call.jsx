@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
-import {Room, RoomEvent, Track} from 'livekit-client';
+import {Room, RoomEvent, Track, DisconnectReason} from 'livekit-client';
 
 const icons = {
  microphone: <><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3"/></>,
@@ -22,6 +22,8 @@ function CallButton({icon, label, off, pressed, disabled, onClick}) {
 }
 
 export default function LessonCall({lessonId, onClose, phone = false, onExitLesson}) {
+ const [attempt, setAttempt] = useState(0);
+ const [otherDevice, setOtherDevice] = useState(false);
  const local = useRef(null);
  const operation = useRef(false);
  const phoneDialog = useRef(null);
@@ -49,6 +51,16 @@ export default function LessonCall({lessonId, onClose, phone = false, onExitLess
 
  useEffect(() => {
   let closed = false;
+  const connectionDevice = crypto.randomUUID();
+  operation.current = false;
+  setBusy(false);
+  setOtherDevice(false);
+  setStatus('Подключаемся…');
+  setPeer(null);
+  setPeerVideo(false);
+  setMicrophone(false);
+  setCamera(false);
+  setAudioBlocked(false);
   const request = new AbortController();
   const connection = new Room();
   session.current = connection;
@@ -107,21 +119,37 @@ export default function LessonCall({lessonId, onClose, phone = false, onExitLess
    })
    .on(RoomEvent.Reconnecting, () => { if (!closed) setStatus('Восстанавливаем связь…'); })
    .on(RoomEvent.Reconnected, () => { if (!closed) { syncDevices(); setStatus('Подключено'); } })
-   .on(RoomEvent.Disconnected, () => {
+   .on(RoomEvent.Disconnected, reason => {
+    for (const publication of connection.localParticipant.trackPublications.values()) publication.track?.stop();
     if (!closed) {
+     remote.current?.replaceChildren();
+     local.current?.replaceChildren();
+     audio.current?.replaceChildren();
      setRoom(null);
-     setStatus('Звонок завершён. Закройте панель, чтобы подключиться снова.');
+     setMicrophone(false);
+     setCamera(false);
+     setPeerVideo(false);
+     setOtherDevice(reason === DisconnectReason.DUPLICATE_IDENTITY);
+     setStatus(reason === DisconnectReason.DUPLICATE_IDENTITY
+      ? 'Связь перенесена на другое устройство'
+      : 'Звонок завершён. Закройте панель, чтобы подключиться снова.');
     }
    });
 
   async function connect() {
    try {
     const response = await fetch('/api/lessons/' + lessonId + '/call/token', {
-     method: 'POST', headers: {'X-Requested-With': 'KrugPi'}, signal: request.signal,
+     method: 'POST', headers: {'X-Requested-With': 'KrugPi', 'Content-Type': 'application/json'},
+     body: JSON.stringify({deviceId: connectionDevice, transfer: attempt > 0}), signal: request.signal,
     });
     const data = await response.json();
     if (!response.ok) throw Error(data.detail || 'Не удалось подключиться');
-    if (closed) return;
+    if (closed) { void release(); return; }
+    if (data.otherDevice) {
+     setOtherDevice(true);
+     setStatus('Связь на другом устройстве');
+     return;
+    }
     await connection.connect(data.url, data.token);
     if (closed) {
      await connection.disconnect();
@@ -133,7 +161,7 @@ export default function LessonCall({lessonId, onClose, phone = false, onExitLess
     setRoom(connection);
     setStatus('Подключено');
     try {
-     await connection.localParticipant.setMicrophoneEnabled(true);
+     await connection.localParticipant.setMicrophoneEnabled(data.microphone !== false);
      if (closed) { await connection.disconnect(); return; }
      syncDevices();
     } catch {
@@ -145,13 +173,19 @@ export default function LessonCall({lessonId, onClose, phone = false, onExitLess
      if (!closed) { operation.current = false; setBusy(false); }
     }
    } catch (error) {
+    void release();
     if (!closed) setStatus(error.message || 'Видеосвязь недоступна');
    }
   }
+  const release = () => fetch('/api/lessons/' + lessonId + '/call/release', {
+   method: 'POST', headers: {'X-Requested-With': 'KrugPi', 'Content-Type': 'application/json'},
+   body: JSON.stringify({deviceId: connectionDevice}), keepalive: true,
+  }).catch(() => {});
   const disconnect = event => {
    closed = true;
    session.current = null;
    for (const publication of connection.localParticipant.trackPublications.values()) publication.track?.stop();
+   void release();
    const pending = connection.disconnect();
    if (event?.detail && Array.isArray(event.detail)) event.detail.push(pending);
   };
@@ -165,8 +199,9 @@ export default function LessonCall({lessonId, onClose, phone = false, onExitLess
    request.abort();
    session.current = null;
    void connection.disconnect();
+   void release();
   };
- }, [lessonId]);
+ }, [lessonId, attempt]);
 
  async function toggle(kind) {
   if (!room || operation.current) return;
@@ -188,6 +223,8 @@ export default function LessonCall({lessonId, onClose, phone = false, onExitLess
    if (session.current === room) setBusy(false);
   }
  }
+ const transferButton = otherDevice && <button type="button" className="lesson-call-transfer"
+  onClick={() => setAttempt(value => value + 1)}>Перенести сюда</button>;
  const expanded = layout === 'expanded';
  const hidden = layout === 'hidden';
  const media = <div className="lesson-call-media" hidden={!phone && hidden}>
@@ -208,7 +245,8 @@ export default function LessonCall({lessonId, onClose, phone = false, onExitLess
   onClick={() => void room.startAudio().catch(() => setStatus('Браузер заблокировал воспроизведение звука.'))}>Воспроизвести звук</button>;
  if (phone) return <>
   <div className="phone-call-controls" aria-label="Управление связью">
-   {micButton}
+   {otherDevice ? <button type="button" className="lesson-call-icon" aria-label="Перенести сюда" title="Перенести связь сюда"
+    onClick={() => setAttempt(value => value + 1)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="13" y="3" width="8" height="18" rx="2"/><path d="M3 12h13m-4-4 4 4-4 4"/></svg></button> : micButton}
    <button type="button" className="lesson-call-icon" aria-label="Открыть панель связи" title="Открыть панель связи"
     onClick={() => setPhonePanel(true)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">{icons.camera}</svg></button>
   </div>
@@ -219,6 +257,7 @@ export default function LessonCall({lessonId, onClose, phone = false, onExitLess
    onCancel={event => {event.preventDefault();setPhonePanel(false);}}>
    <div className="phone-call-heading"><h2 id="phone-call-title">Связь на уроке</h2><button type="button" onClick={() => setPhonePanel(false)}>К доске</button></div>
    <p role="status">{status}</p>
+   {transferButton}
    {media}
    {playback}
    <div className="phone-call-dialog-actions">{micButton}{cameraButton}
@@ -230,6 +269,7 @@ export default function LessonCall({lessonId, onClose, phone = false, onExitLess
  return <section className={'lesson-call lesson-call-' + layout} aria-label="Видеосвязь">
   <p className={room && status.startsWith('Подключено') && !expanded ? 'lesson-call-status-quiet' : undefined}
    role="status">{status}</p>
+  {transferButton}
   {media}
   <div ref={audio}/>
   {playback}

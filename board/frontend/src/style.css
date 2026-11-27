@@ -295,3 +295,5 @@ button:hover,.board-action-menu>summary:hover{background:#f1e8ff}button:disabled
 
 .tablet-board .editor .App-toolbar-container .shapes-section{flex-wrap:wrap}
 .tablet-board .editor .App-toolbar-container>.App-toolbar>div{flex-wrap:wrap}
+
+.lesson-call-transfer{min-height:44px;padding:6px 9px;margin-bottom:6px;font-size:12px}
