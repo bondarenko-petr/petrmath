@@ -44,7 +44,7 @@ function Icon({type}) {
   strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[type] || paths.more}</svg>;
 }
 
-export function PhoneTools({api, disabled, active, insertTriangle, insertGrid, geometry, insertGeometry, strokeWidth, onStrokeWidthChange, canFollow, followTeacher, teacherWidth, onPenModeChange}) {
+export function PhoneTools({api, disabled, active, insertGrid, geometry, insertGeometry, strokeWidth, onStrokeWidthChange, canFollow, followTeacher, teacherWidth, onPenModeChange}) {
  const [panel, setPanel] = useState(null);
  const [shape, setShape] = useState('rectangle');
  const dialog = useRef(null);
@@ -61,8 +61,7 @@ export function PhoneTools({api, disabled, active, insertTriangle, insertGrid, g
  }
  function choose(type) {
   if (!api || (disabled && type !== 'hand')) return;
-  if (type === 'triangle') insertTriangle();
-  else api.setActiveTool({type});
+  api.setActiveTool({type});
   if (['rectangle', 'ellipse', 'diamond', 'triangle', 'line', 'arrow'].includes(type)) setShape(type);
   close();
  }
@@ -70,15 +69,14 @@ export function PhoneTools({api, disabled, active, insertTriangle, insertGrid, g
   trigger.current = event.currentTarget;
   setPanel(name);
  }
- const shapes = [['rectangle','Прямоугольник'],['ellipse','Окружность'],['triangle','Треугольник'],
-  ['diamond','Ромб'],['line','Линия'],['arrow','Стрелка']];
+ const shapeIcon = spec => spec.category === 'Треугольники' ? 'triangle' : spec.category === 'Окружность' ? 'ellipse' : spec.id === 'diamond' ? 'diamond' : 'rectangle';
  return <>
   <div className="phone-tools" role="toolbar" aria-label="Инструменты доски">
    {[['selection','Выделение'],['hand','Рука'],['freedraw','Перо'],['eraser','Ластик']].map(([type,label]) =>
     <button type="button" key={type} title={label} aria-label={label} aria-pressed={active === type}
      disabled={!api || (disabled && type !== 'hand')} onClick={event => {if(type === 'freedraw' && active === 'freedraw')open('stroke',event);else choose(type);}}><Icon type={type}/></button>)}
    <button type="button" title="Фигуры" aria-label="Фигуры" aria-haspopup="dialog" disabled={disabled}
-    aria-pressed={shapes.some(([type]) => active === type)} onClick={event => open('shapes',event)}><Icon type={shape}/><span className="phone-chevron">⌄</span></button>
+    aria-pressed={['rectangle','ellipse','diamond'].includes(active)} onClick={event => open('shapes',event)}><Icon type={shape}/><span className="phone-chevron">⌄</span></button>
    <button type="button" title="Ещё инструменты" aria-label="Ещё инструменты" aria-haspopup="dialog" disabled={disabled}
     onClick={event => open('more',event)}><Icon type="more"/></button>
   </div>
@@ -103,14 +101,14 @@ export function PhoneTools({api, disabled, active, insertTriangle, insertGrid, g
       onClick={() => onStrokeWidthChange({currentTarget:{value:width}})}>{width}</button>)}</div>
     <button type="button" onClick={close}>Готово</button>
    </div> : <div className="phone-shape-choices">
-    {panel === 'shapes' ? shapes.map(([type,label]) => <button type="button" key={type} disabled={disabled}
-     onClick={event => {if(type === 'freedraw' && active === 'freedraw')open('stroke',event);else choose(type);}}><Icon type={type}/><span>{label}</span></button>) : <>
+    {panel === 'shapes' ? geometry.map(spec => <button type="button" key={spec.id} disabled={disabled}
+     onClick={() => {insertGeometry(spec);setShape(shapeIcon(spec));close();}}><Icon type={shapeIcon(spec)}/><span>{spec.name}</span></button>) : <>
      <button type="button" disabled={disabled} onClick={() => setPanel('stroke')}>Толщина пера</button>
      <button type="button" disabled={disabled} onClick={() => choose('text')}>Текст</button>
      <button type="button" disabled={disabled} onClick={() => choose('image')}>Изображение</button>
      <button type="button" disabled={disabled} onClick={() => {insertGrid();close();}}>Координатная сетка</button>
-     {geometry.map(spec => <button type="button" key={spec.id} disabled={disabled}
-      onClick={() => {insertGeometry(spec);close();}}>{spec.name}</button>)}
+     <button type="button" disabled={disabled} onClick={() => choose('line')}><Icon type="line"/><span>Линия</span></button>
+     <button type="button" disabled={disabled} onClick={() => choose('arrow')}><Icon type="arrow"/><span>Стрелка</span></button>
     </>}
    </div>}
   </dialog>}

@@ -504,14 +504,13 @@ function App(){
   const state=api.getAppState(),[left,top,right,bottom]=geometryBounds(spec.objects);
   const centerX=state.width/(2*state.zoom.value)-state.scrollX;
   const centerY=state.height/(2*state.zoom.value)-state.scrollY;
-  const group=crypto.randomUUID();
   const elements=convertToExcalidrawElements(spec.objects.map(object=>({
    ...structuredClone(object),x:object.x+centerX-(left+right)/2,y:object.y+centerY-(top+bottom)/2,
-   strokeColor:'#321653',strokeWidth:2,roughness:0,groupIds:[group],
+   strokeColor:'#321653',strokeWidth:2,roughness:0,
   })));
   api.setActiveTool({type:'selection'});
   api.updateScene({elements:[...api.getSceneElementsIncludingDeleted(),...elements],
-   appState:{selectedElementIds:Object.fromEntries(elements.map(e=>[e.id,true])),selectedGroupIds:{[group]:true}},
+   appState:{selectedElementIds:Object.fromEntries(elements.map(e=>[e.id,true])),selectedGroupIds:{}},
    captureUpdate:CaptureUpdateAction.IMMEDIATELY});
   requestAnimationFrame(()=>editor.current?.querySelector('.excalidraw')?.focus({preventScroll:true}));
  }
@@ -672,7 +671,7 @@ function App(){
    <div className="figure-types">
     {categories.map((name,index)=><button type="button" key={name} data-keep-menu title={name} aria-label={name}
      aria-pressed={!allFigures && category===name} onClick={()=>{setCategory(name);setAllFigures(false);}}>
-      <span aria-hidden="true">{['△','□','○','∟','↗'][index]}</span>
+      <span aria-hidden="true">{['△','□','○'][index]}</span>
     </button>)}
    </div>
    <div className="figure-variants">
@@ -732,7 +731,6 @@ function App(){
   </Suspense>}
   {!phone && toolbar && createPortal(drawingActions, toolbar)}
   {phone && <PhoneTools api={api} active={activeTool} disabled={!canDraw} insertGrid={insertGrid}
-   insertTriangle={() => insertGeometry(GEOMETRY.find(spec => spec.id === 'triangle'))}
    geometry={GEOMETRY} insertGeometry={insertGeometry}
    strokeWidth={strokeWidth} onStrokeWidthChange={changeStrokeWidth}
    canFollow={access.role === 'student'} followTeacher={followTeacher}

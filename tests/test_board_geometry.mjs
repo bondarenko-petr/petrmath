@@ -10,4 +10,22 @@ test('equilateral triangle sides are equal',()=>{const p=GEOMETRY.find(s=>s.id==
 test('isosceles triangle sides are equal',()=>{const p=GEOMETRY.find(s=>s.id==='isosceles').objects[0].points;assert.equal(Math.hypot(p[1][0]-p[0][0],p[1][1]-p[0][1]),Math.hypot(p[2][0]-p[1][0],p[2][1]-p[1][1]));});
 test('right trapezoid has perpendicular bases and side',()=>{const p=GEOMETRY.find(s=>s.id==='right-trapezoid').objects[0].points;assert.equal(p[0][0],p[3][0]);assert.equal(p[0][1],p[1][1]);assert.equal(p[2][1],p[3][1]);});
 test('isosceles trapezoid legs have equal length',()=>{const p=GEOMETRY.find(s=>s.id==='isosceles-trapezoid').objects[0].points;assert.equal(Math.hypot(p[3][0]-p[0][0],p[3][1]-p[0][1]),Math.hypot(p[2][0]-p[1][0],p[2][1]-p[1][1]));});
-test('tangent touches circle and is perpendicular to radius',()=>{const [c,t,r]=GEOMETRY.find(s=>s.id==='tangent').objects;assert.equal(t.x,c.x+c.width);assert.equal(r.y,c.y+c.height/2);assert.equal(r.x+r.points[1][0],t.x);assert.equal(t.points[1][0],0);assert.equal(r.points[1][1],0);});
+test('palette contains only twelve geometric figures in three categories',()=>{
+ assert.equal(GEOMETRY.length,12);
+ assert.deepEqual([...new Set(GEOMETRY.map(s=>s.category))],['Треугольники','Четырёхугольники','Окружность']);
+ assert.ok(GEOMETRY.every(s=>s.objects.length===1));
+});
+for (const spec of GEOMETRY) {
+ test(`${spec.name}: nonzero bounds match resize dimensions`, () => {
+  assert.equal(spec.objects.length, 1);
+  const object = spec.objects[0];
+  const [left, top, right, bottom] = geometryBounds(spec.objects);
+  assert(object.width > 0 && object.height > 0);
+  assert.equal(object.width, right - left);
+  assert.equal(object.height, bottom - top);
+  if (object.points) {
+   assert.deepEqual(object.points[0], [0, 0]);
+   assert.deepEqual(object.points.at(-1), object.points[0]);
+  }
+ });
+}
